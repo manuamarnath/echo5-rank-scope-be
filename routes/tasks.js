@@ -1,0 +1,45 @@
+// Express API endpoints for task management
+const express = require('express');
+const router = express.Router();
+const Task = require('../models/Task');
+const auth = require('../middleware/auth');
+
+// Create task
+router.post('/tasks', auth(['owner', 'employee']), async (req, res) => {
+  try {
+    const task = new Task(req.body);
+    await task.save();
+    res.status(201).json(task);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// List tasks by client or assignedTo
+router.get('/tasks', auth(), async (req, res) => {
+  try {
+    const { clientId, assignedTo } = req.query;
+    let filter = {};
+    if (clientId) filter.clientId = clientId;
+    if (assignedTo) filter.assignedTo = assignedTo;
+    // RBAC: client sees only their own tasks
+    if (req.user.role === 'client') filter.clientId = req.user.clientId;
+    const tasks = await Task.find(filter);
+    res.json(tasks);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update status/assignment
+router.put('/tasks/:id', auth(['owner', 'employee']), async (req, res) => {
+  try {
+    const task = await Task.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    res.json(task);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+module.exports = router;
