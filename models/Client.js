@@ -6,7 +6,18 @@ const locationSchema = new Schema({
   city: String,
   state: String,
   country: String,
-  zip: String
+  zip: String,
+  radius: {
+    type: Number,
+    default: 25, // Default radius in miles/km
+    min: 1,
+    max: 500
+  },
+  radiusUnit: {
+    type: String,
+    enum: ['miles', 'km'],
+    default: 'miles'
+  }
 }, { _id: false });
 
 const integrationsSchema = new Schema({
