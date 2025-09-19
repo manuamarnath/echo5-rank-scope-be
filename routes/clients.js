@@ -114,13 +114,16 @@ router.post('/demo', async (req, res) => {
 // Helper function to process onboarding keywords
 async function processOnboardingKeywords(client) {
   const keywordsToCreate = [];
-  
+  console.log('processOnboardingKeywords called for client:', client._id, client.name);
+  console.log('Primary keywords:', client.primaryKeywords);
+  console.log('Seed keywords:', client.seedKeywords);
+
   // Process primary keywords
   if (client.primaryKeywords && client.primaryKeywords.length > 0) {
     for (const primaryKeyword of client.primaryKeywords) {
       keywordsToCreate.push({
         clientId: client._id,
-        text: primaryKeyword.keyword.trim().toLowerCase(),
+        text: primaryKeyword.keyword?.trim().toLowerCase(),
         intent: 'transactional', // Default for primary keywords
         geo: primaryKeyword.targetLocation || null,
         volume: null,
@@ -136,19 +139,19 @@ async function processOnboardingKeywords(client) {
       });
     }
   }
-  
+
   // Process seed keywords
   if (client.seedKeywords && client.seedKeywords.length > 0) {
     for (const seedKeyword of client.seedKeywords) {
       // Skip if already exists as primary keyword
       const isDuplicate = keywordsToCreate.some(k => 
-        k.text === seedKeyword.keyword.trim().toLowerCase()
+        k.text === seedKeyword.keyword?.trim().toLowerCase()
       );
-      
+
       if (!isDuplicate) {
         keywordsToCreate.push({
           clientId: client._id,
-          text: seedKeyword.keyword.trim().toLowerCase(),
+          text: seedKeyword.keyword?.trim().toLowerCase(),
           intent: seedKeyword.intent || 'informational',
           geo: null,
           volume: seedKeyword.searchVolume || null,
@@ -165,7 +168,9 @@ async function processOnboardingKeywords(client) {
       }
     }
   }
-  
+
+  console.log('Prepared keywords to create:', keywordsToCreate);
+
   // Bulk create keywords if any exist
   if (keywordsToCreate.length > 0) {
     try {
@@ -174,6 +179,8 @@ async function processOnboardingKeywords(client) {
     } catch (error) {
       console.error('Error creating keywords for client:', error);
     }
+  } else {
+    console.log('No keywords to create for client:', client._id);
   }
 }
 
