@@ -15,6 +15,7 @@ app.use('/clients', require('./routes/clients'));
 app.use('/keywords', require('./routes/keywords'));
 app.use('/pages', require('./routes/pages'));
 app.use('/briefs', require('./routes/briefs'));
+app.use('/test', require('./routes/test'));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
