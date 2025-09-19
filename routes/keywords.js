@@ -163,6 +163,54 @@ router.put('/:id/allocate', async (req, res) => {
   }
 });
 
+// PUT update keyword
+router.put('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { text, intent, geo, volume, difficulty } = req.body;
+
+    if (!text) {
+      return res.status(400).json({ error: 'text is required' });
+    }
+
+    // Check if keyword text already exists for this client (excluding current keyword)
+    const keyword = await Keyword.findById(id);
+    if (!keyword) {
+      return res.status(404).json({ error: 'Keyword not found' });
+    }
+
+    const existingKeyword = await Keyword.findOne({ 
+      clientId: keyword.clientId, 
+      text: text.trim().toLowerCase(),
+      _id: { $ne: id }
+    });
+
+    if (existingKeyword) {
+      return res.status(409).json({ 
+        error: 'Keyword already exists for this client' 
+      });
+    }
+
+    const updatedKeyword = await Keyword.findByIdAndUpdate(
+      id,
+      {
+        text: text.trim().toLowerCase(),
+        intent: intent || keyword.intent,
+        geo: geo !== undefined ? geo : keyword.geo,
+        volume: volume !== undefined ? volume : keyword.volume,
+        difficulty: difficulty !== undefined ? difficulty : keyword.difficulty
+      },
+      { new: true }
+    ).populate('pageId', 'title url');
+
+    res.json(updatedKeyword);
+
+  } catch (error) {
+    console.error('Error updating keyword:', error);
+    res.status(500).json({ error: 'Failed to update keyword' });
+  }
+});
+
 // DELETE keyword
 router.delete('/:id', async (req, res) => {
   try {
