@@ -43,6 +43,7 @@ const clientSchema = new Schema({
     required: true
   },
   industry: String,
+  website: String, // Client's website domain
   locations: [locationSchema],
   services: [String],
   competitors: [String], // Array of URLs
@@ -59,6 +60,19 @@ const clientSchema = new Schema({
     },
     targetLocation: String, // Optional - for location-specific keywords
     notes: String // Optional - any specific notes about this primary keyword
+  }],
+  seedKeywords: [{
+    keyword: String,
+    searchVolume: Number,
+    difficulty: Number,
+    intent: {
+      type: String,
+      enum: ['informational', 'transactional', 'navigational', 'local']
+    },
+    source: {
+      type: String,
+      enum: ['csv', 'gsc', 'manual']
+    }
   }],
   integrations: integrationsSchema
 }, {

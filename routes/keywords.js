@@ -331,4 +331,155 @@ router.get('/primary', async (req, res) => {
   }
 });
 
+// POST check keyword ranks
+router.post('/check-ranks', async (req, res) => {
+  try {
+    const { clientId, keywordIds, domain, searchEngine = 'google', device = 'desktop', location = '' } = req.body;
+
+    if (!clientId || !keywordIds || !Array.isArray(keywordIds) || keywordIds.length === 0 || !domain) {
+      return res.status(400).json({ 
+        error: 'clientId, keywordIds array, and domain are required' 
+      });
+    }
+
+    // Fetch the keywords to check
+    const keywords = await Keyword.find({
+      _id: { $in: keywordIds },
+      clientId
+    });
+
+    if (keywords.length === 0) {
+      return res.status(404).json({ error: 'No keywords found' });
+    }
+
+    const results = [];
+    
+    // Process each keyword
+    for (const keyword of keywords) {
+      try {
+        // Simulate rank checking (replace with actual rank checking service)
+        const rankResult = await checkKeywordRank(keyword.text, domain, searchEngine, device, location);
+        
+        // Update keyword with new rank data
+        const previousRank = keyword.currentRank;
+        keyword.previousRank = previousRank;
+        keyword.currentRank = rankResult.position;
+        keyword.lastRankCheck = new Date();
+        
+        // Update best/worst ranks
+        if (rankResult.position) {
+          if (!keyword.bestRank || rankResult.position < keyword.bestRank) {
+            keyword.bestRank = rankResult.position;
+          }
+          if (!keyword.worstRank || rankResult.position > keyword.worstRank) {
+            keyword.worstRank = rankResult.position;
+          }
+        }
+        
+        // Add to rank history
+        keyword.rankHistory.push({
+          position: rankResult.position,
+          url: rankResult.url,
+          searchEngine,
+          device,
+          location,
+          checkedAt: new Date()
+        });
+        
+        // Keep only last 100 rank history entries
+        if (keyword.rankHistory.length > 100) {
+          keyword.rankHistory = keyword.rankHistory.slice(-100);
+        }
+        
+        await keyword.save();
+        
+        results.push({
+          keyword: keyword.text,
+          keywordId: keyword._id,
+          position: rankResult.position,
+          url: rankResult.url,
+          searchEngine,
+          device,
+          location,
+          checkedAt: new Date().toISOString()
+        });
+      } catch (error) {
+        console.error(`Error checking rank for keyword ${keyword.text}:`, error);
+        results.push({
+          keyword: keyword.text,
+          keywordId: keyword._id,
+          position: null,
+          url: null,
+          searchEngine,
+          device,
+          location,
+          checkedAt: new Date().toISOString(),
+          error: error.message
+        });
+      }
+    }
+
+    res.json(results);
+
+  } catch (error) {
+    console.error('Error checking keyword ranks:', error);
+    res.status(500).json({ error: 'Failed to check keyword ranks' });
+  }
+});
+
+// Helper function to simulate rank checking (replace with actual service)
+async function checkKeywordRank(keyword, domain, searchEngine, device, location) {
+  // This is a mock implementation - replace with actual rank checking service
+  // You could integrate with services like SERPApi, DataForSEO, or build custom scrapers
+  
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      // Simulate random rank results for demo
+      const hasRank = Math.random() > 0.3; // 70% chance of having a rank
+      const position = hasRank ? Math.floor(Math.random() * 100) + 1 : null;
+      const url = hasRank ? `https://${domain}/sample-page` : null;
+      
+      resolve({
+        position,
+        url,
+        searchEngine,
+        device,
+        location
+      });
+    }, 1000 + Math.random() * 2000); // Simulate 1-3 second delay
+  });
+}
+
+// GET rank history for a keyword
+router.get('/:id/rank-history', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { limit = 30 } = req.query;
+
+    const keyword = await Keyword.findById(id);
+    if (!keyword) {
+      return res.status(404).json({ error: 'Keyword not found' });
+    }
+
+    // Get recent rank history
+    const rankHistory = keyword.rankHistory
+      .sort((a, b) => new Date(b.checkedAt) - new Date(a.checkedAt))
+      .slice(0, parseInt(limit));
+
+    res.json({
+      keyword: keyword.text,
+      currentRank: keyword.currentRank,
+      previousRank: keyword.previousRank,
+      bestRank: keyword.bestRank,
+      worstRank: keyword.worstRank,
+      lastRankCheck: keyword.lastRankCheck,
+      rankHistory
+    });
+
+  } catch (error) {
+    console.error('Error fetching rank history:', error);
+    res.status(500).json({ error: 'Failed to fetch rank history' });
+  }
+});
+
 module.exports = router;

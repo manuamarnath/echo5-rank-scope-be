@@ -49,7 +49,39 @@ const keywordSchema = new Schema({
   targetLocation: String, // For location-specific primary keywords
   notes: String, // Additional notes for primary keywords
   volume: Number,
-  difficulty: Number
+  difficulty: Number,
+  // Rank tracking fields
+  currentRank: {
+    type: Number,
+    default: null
+  },
+  previousRank: {
+    type: Number,
+    default: null
+  },
+  bestRank: {
+    type: Number,
+    default: null
+  },
+  worstRank: {
+    type: Number,
+    default: null
+  },
+  lastRankCheck: {
+    type: Date,
+    default: null
+  },
+  rankHistory: [{
+    position: Number,
+    url: String,
+    searchEngine: String,
+    device: String,
+    location: String,
+    checkedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }]
 }, {
   timestamps: true
 });

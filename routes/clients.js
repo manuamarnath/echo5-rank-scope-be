@@ -1,18 +1,92 @@
 const express = require('express');
 const router = express.Router();
 const Client = require('../models/Client');
+const Keyword = require('../models/Keyword');
 const auth = require('../middleware/auth');
 
 // POST /clients - create client (owner only)
 router.post('/', auth(['owner']), async (req, res) => {
   try {
-    const client = new Client(req.body);
+    const clientData = req.body;
+    
+    // Create the client first
+    const client = new Client(clientData);
     await client.save();
+    
+    // Process and create keyword records from onboarding data
+    await processOnboardingKeywords(client);
+    
     res.status(201).json(client);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
+
+// Helper function to process onboarding keywords
+async function processOnboardingKeywords(client) {
+  const keywordsToCreate = [];
+  
+  // Process primary keywords
+  if (client.primaryKeywords && client.primaryKeywords.length > 0) {
+    for (const primaryKeyword of client.primaryKeywords) {
+      keywordsToCreate.push({
+        clientId: client._id,
+        text: primaryKeyword.keyword.trim().toLowerCase(),
+        intent: 'transactional', // Default for primary keywords
+        geo: primaryKeyword.targetLocation || null,
+        volume: null,
+        difficulty: null,
+        allocatedTo: null,
+        serviceMatch: null,
+        pageId: null,
+        role: 'primary',
+        isPrimary: true,
+        priority: primaryKeyword.priority || 5,
+        targetLocation: primaryKeyword.targetLocation || null,
+        notes: primaryKeyword.notes || null
+      });
+    }
+  }
+  
+  // Process seed keywords
+  if (client.seedKeywords && client.seedKeywords.length > 0) {
+    for (const seedKeyword of client.seedKeywords) {
+      // Skip if already exists as primary keyword
+      const isDuplicate = keywordsToCreate.some(k => 
+        k.text === seedKeyword.keyword.trim().toLowerCase()
+      );
+      
+      if (!isDuplicate) {
+        keywordsToCreate.push({
+          clientId: client._id,
+          text: seedKeyword.keyword.trim().toLowerCase(),
+          intent: seedKeyword.intent || 'informational',
+          geo: null,
+          volume: seedKeyword.searchVolume || null,
+          difficulty: seedKeyword.difficulty || null,
+          allocatedTo: null,
+          serviceMatch: null,
+          pageId: null,
+          role: null,
+          isPrimary: false,
+          priority: null,
+          targetLocation: null,
+          notes: `Imported from ${seedKeyword.source || 'onboarding'}`
+        });
+      }
+    }
+  }
+  
+  // Bulk create keywords if any exist
+  if (keywordsToCreate.length > 0) {
+    try {
+      await Keyword.insertMany(keywordsToCreate);
+      console.log(`Created ${keywordsToCreate.length} keywords for client ${client.name}`);
+    } catch (error) {
+      console.error('Error creating keywords for client:', error);
+    }
+  }
+}
 
 // GET /clients - list clients (owner/employee only)
 router.get('/', auth(['owner', 'employee']), async (req, res) => {
