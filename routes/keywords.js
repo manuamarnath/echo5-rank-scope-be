@@ -221,4 +221,114 @@ router.get('/allocation-summary', async (req, res) => {
   }
 });
 
+// POST bulk import primary keywords from client onboarding
+router.post('/bulk-import-primary', async (req, res) => {
+  try {
+    const { clientId, primaryKeywords } = req.body;
+
+    if (!clientId || !Array.isArray(primaryKeywords) || primaryKeywords.length === 0) {
+      return res.status(400).json({ 
+        error: 'clientId and primaryKeywords array are required' 
+      });
+    }
+
+    // Validate and prepare primary keywords for insertion
+    const primaryKeywordDocs = primaryKeywords.map(keyword => {
+      if (!keyword.keyword || keyword.keyword.trim() === '') {
+        throw new Error('All primary keywords must have text');
+      }
+
+      return {
+        clientId,
+        text: keyword.keyword.trim().toLowerCase(),
+        intent: 'transactional', // Default for primary keywords
+        geo: keyword.targetLocation || null,
+        volume: null,
+        difficulty: null,
+        allocatedTo: null,
+        serviceMatch: null,
+        pageId: null,
+        role: 'primary',
+        isPrimary: true,
+        priority: keyword.priority || 5,
+        targetLocation: keyword.targetLocation || null,
+        notes: keyword.notes || null
+      };
+    });
+
+    // Remove duplicates by text within the same client
+    const existingKeywords = await Keyword.find({ 
+      clientId,
+      text: { $in: primaryKeywordDocs.map(k => k.text) }
+    }).select('text isPrimary');
+
+    // Update existing keywords to be primary or create new ones
+    const existingTexts = new Map();
+    existingKeywords.forEach(k => existingTexts.set(k.text, k));
+
+    const newKeywords = [];
+    const updatePromises = [];
+
+    primaryKeywordDocs.forEach(keyword => {
+      const existing = existingTexts.get(keyword.text);
+      if (existing) {
+        // Update existing keyword to be primary
+        updatePromises.push(
+          Keyword.findByIdAndUpdate(existing._id, {
+            isPrimary: true,
+            role: 'primary',
+            priority: keyword.priority,
+            targetLocation: keyword.targetLocation,
+            notes: keyword.notes
+          })
+        );
+      } else {
+        // Add new primary keyword
+        newKeywords.push(keyword);
+      }
+    });
+
+    // Execute updates and inserts
+    await Promise.all(updatePromises);
+    const insertedKeywords = newKeywords.length > 0 ? await Keyword.insertMany(newKeywords) : [];
+
+    res.status(201).json({
+      message: `Successfully processed ${primaryKeywordDocs.length} primary keywords`,
+      created: insertedKeywords.length,
+      updated: updatePromises.length,
+      keywords: [...insertedKeywords]
+    });
+
+  } catch (error) {
+    console.error('Error importing primary keywords:', error);
+    res.status(500).json({ 
+      error: 'Failed to import primary keywords',
+      details: error.message 
+    });
+  }
+});
+
+// GET primary keywords for a client
+router.get('/primary', async (req, res) => {
+  try {
+    const { clientId } = req.query;
+    
+    if (!clientId) {
+      return res.status(400).json({ error: 'clientId is required' });
+    }
+
+    const primaryKeywords = await Keyword.find({ 
+      clientId, 
+      isPrimary: true 
+    })
+      .populate('pageId', 'title url')
+      .sort({ priority: -1, createdAt: -1 });
+
+    res.json(primaryKeywords);
+  } catch (error) {
+    console.error('Error fetching primary keywords:', error);
+    res.status(500).json({ error: 'Failed to fetch primary keywords' });
+  }
+});
+
 module.exports = router;

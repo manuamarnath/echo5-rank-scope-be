@@ -46,6 +46,20 @@ const clientSchema = new Schema({
   locations: [locationSchema],
   services: [String],
   competitors: [String], // Array of URLs
+  primaryKeywords: [{
+    keyword: {
+      type: String,
+      required: true
+    },
+    priority: {
+      type: Number,
+      min: 1,
+      max: 10,
+      default: 5
+    },
+    targetLocation: String, // Optional - for location-specific keywords
+    notes: String // Optional - any specific notes about this primary keyword
+  }],
   integrations: integrationsSchema
 }, {
   timestamps: true

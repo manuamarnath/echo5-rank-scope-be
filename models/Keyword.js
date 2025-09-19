@@ -35,6 +35,19 @@ const keywordSchema = new Schema({
     enum: ['primary', 'secondary', 'supporting', null],
     default: null
   },
+  isPrimary: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
+  priority: {
+    type: Number,
+    min: 1,
+    max: 10,
+    default: null // Only set for primary keywords
+  },
+  targetLocation: String, // For location-specific primary keywords
+  notes: String, // Additional notes for primary keywords
   volume: Number,
   difficulty: Number
 }, {
