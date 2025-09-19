@@ -29,6 +29,7 @@
     "express": "^5.1.0",
     "ioredis": "^5.7.0",
     "jsonwebtoken": "^9.0.2",
+    "mongodb-memory-server": "^10.2.1",
     "mongoose": "^8.18.1"
   },
   "devDependencies": {
