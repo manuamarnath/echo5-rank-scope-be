@@ -30,25 +30,24 @@ app.use('/auth', apiLimiter); // Apply rate limiting to auth routes
 // Body parser middleware
 app.use(express.json({ limit: '1mb' })); // Limit payload size
 
-// Routes
-// Original routes
-app.use('/auth', require('./routes/auth'));
-app.use('/clients', require('./routes/clients'));
-app.use('/keywords', require('./routes/keywords'));
-app.use('/pages', require('./routes/pages'));
-app.use('/briefs', require('./routes/briefs'));
-app.use('/test', require('./routes/test'));
-
-// Routes with /api prefix to match frontend expectations
+// Routes - Standardized with /api prefix for consistency
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/clients', require('./routes/clients'));
 app.use('/api/keywords', require('./routes/keywords'));
 app.use('/api/pages', require('./routes/pages'));
 app.use('/api/briefs', require('./routes/briefs'));
+app.use('/api/tasks', require('./routes/tasks'));
+app.use('/api/report', require('./routes/report'));
 app.use('/api/test', require('./routes/test'));
 
+// Legacy route support (without /api prefix) - can be removed once frontend is updated
+app.use('/auth', require('./routes/auth'));
+app.use('/clients', require('./routes/clients'));
+app.use('/keywords', require('./routes/keywords'));
+app.use('/pages', require('./routes/pages'));
+app.use('/briefs', require('./routes/briefs'));
 app.use('/tasks', require('./routes/tasks'));
-app.use('/api/tasks', require('./routes/tasks'));
+app.use('/report', require('./routes/report'));
 
 // Health check endpoints
 app.get('/health', (req, res) => {
@@ -59,13 +58,6 @@ app.get('/health', (req, res) => {
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
-
-// API routes for frontend compatibility
-app.use('/api/clients', require('./routes/clients'));
-app.use('/api/keywords', require('./routes/keywords'));
-app.use('/api/pages', require('./routes/pages'));
-app.use('/api/briefs', require('./routes/briefs'));
-app.use('/api/auth', require('./routes/auth'));
 
 // Import custom error handler
 const { errorHandler } = require('./middleware/errorHandler');
