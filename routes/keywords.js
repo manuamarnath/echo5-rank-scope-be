@@ -593,17 +593,15 @@ async function checkKeywordRank(keyword, domain, searchEngine, device, location)
     };
   } catch (error) {
     console.error('Error checking keyword rank with Scrapingdog:', error.message);
-    // Fallback to simulated rank if API fails
-    const simulatedRank = Math.floor(Math.random() * 100) + 1;
     return {
-      position: simulatedRank,
-      url: simulatedRank <= 10 ? `https://${domain || 'example.com'}/page` : null,
-      snippet: `Error: ${error.message}`,
+      position: null,
+      url: null,
+      snippet: '',
       timestamp: new Date(),
       searchEngine,
       device,
       location,
-      error: true
+      error: error.message
     };
   }
 }
