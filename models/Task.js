@@ -8,6 +8,7 @@ const taskSchema = new Schema({
   pageId: { type: Schema.Types.ObjectId, ref: 'Page' },
   clientId: { type: Schema.Types.ObjectId, ref: 'Client' },
   status: { type: String, enum: ['open', 'in-progress', 'completed'], default: 'open' },
+  content: { type: String, default: '' },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Task', taskSchema);

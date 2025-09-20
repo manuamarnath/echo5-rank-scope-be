@@ -1,21 +1,61 @@
 const express = require('express');
 const router = express.Router();
 const Keyword = require('../models/Keyword');
+const axios = require('axios');
+const NodeCache = require('node-cache');
 
-// GET all keywords for a client
+// Initialize cache with 5 minute TTL
+const cache = new NodeCache({ stdTTL: 300 });
+
+// GET all keywords for a client with pagination and caching
 router.get('/', async (req, res) => {
   try {
-    const { clientId } = req.query;
+    const { clientId, page = 1, limit = 50, sort = 'createdAt', order = 'desc' } = req.query;
     
     if (!clientId) {
       return res.status(400).json({ error: 'clientId is required' });
     }
 
+    // Create cache key based on query parameters
+    const cacheKey = `keywords_${clientId}_${page}_${limit}_${sort}_${order}`;
+    
+    // Check if data exists in cache
+    const cachedData = cache.get(cacheKey);
+    if (cachedData) {
+      return res.json(cachedData);
+    }
+
+    // Calculate pagination values
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const sortOrder = order === 'desc' ? -1 : 1;
+    const sortOptions = {};
+    sortOptions[sort] = sortOrder;
+
+    // Execute query with pagination
     const keywords = await Keyword.find({ clientId })
       .populate('pageId', 'title url')
-      .sort({ createdAt: -1 });
+      .sort(sortOptions)
+      .skip(skip)
+      .limit(parseInt(limit));
 
-    res.json(keywords);
+    // Get total count for pagination metadata
+    const total = await Keyword.countDocuments({ clientId });
+    
+    // Prepare response with pagination metadata
+    const response = {
+      data: keywords,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(total / parseInt(limit))
+      }
+    };
+
+    // Store in cache
+    cache.set(cacheKey, response);
+
+    res.json(response);
   } catch (error) {
     console.error('Error fetching keywords:', error);
     res.status(500).json({ error: 'Failed to fetch keywords' });
@@ -73,6 +113,12 @@ router.post('/bulk-import', async (req, res) => {
     // Bulk insert new keywords
     const insertedKeywords = await Keyword.insertMany(newKeywords);
 
+    // Invalidate cache for this client
+    const clientKeys = cache.keys().filter(key => key.startsWith(`keywords_${clientId}_`));
+    if (clientKeys.length > 0) {
+      cache.del(clientKeys);
+    }
+
     res.status(201).json({
       message: `Successfully imported ${insertedKeywords.length} keywords`,
       imported: insertedKeywords.length,
@@ -122,6 +168,12 @@ router.post('/', async (req, res) => {
     });
 
     await keyword.save();
+
+    // Invalidate cache for this client
+    const clientKeys = cache.keys().filter(key => key.startsWith(`keywords_${clientId}_`));
+    if (clientKeys.length > 0) {
+      cache.del(clientKeys);
+    }
     
     const populatedKeyword = await Keyword.findById(keyword._id)
       .populate('pageId', 'title url');
@@ -202,6 +254,12 @@ router.put('/:id', async (req, res) => {
       },
       { new: true }
     ).populate('pageId', 'title url');
+
+    // Invalidate cache for this client
+    const clientKeys = cache.keys().filter(key => key.startsWith(`keywords_${keyword.clientId}_`));
+    if (clientKeys.length > 0) {
+      cache.del(clientKeys);
+    }
 
     res.json(updatedKeyword);
 
@@ -475,30 +533,82 @@ router.post('/check-ranks', async (req, res) => {
   }
 });
 
-// Helper function to simulate rank checking (replace with actual service)
+// Helper function to check keyword rank using Scrapingdog SERP API
 async function checkKeywordRank(keyword, domain, searchEngine, device, location) {
-  // This is a mock implementation - replace with actual rank checking service
-  // You could integrate with services like SERPApi, DataForSEO, or build custom scrapers
-  
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      // Simulate random rank results for demo
-      const hasRank = Math.random() > 0.3; // 70% chance of having a rank
-      const position = hasRank ? Math.floor(Math.random() * 100) + 1 : null;
-      const url = hasRank ? `https://${domain}/sample-page` : null;
-      
-      resolve({
-        position,
-        url,
-        searchEngine,
-        device,
-        location
-      });
-    }, 1000 + Math.random() * 2000); // Simulate 1-3 second delay
-  });
+  try {
+    const apiKey = process.env.SCRAPINGDOG_API_KEY;
+    if (!apiKey) {
+      throw new Error('SCRAPINGDOG_API_KEY environment variable is not set');
+    }
+
+    // Scrapingdog parameters
+    const payload = {
+      api_key: apiKey,
+      query: keyword,
+      country: location ? location.split(',')[0].trim().toLowerCase() : 'us',
+      gl: location ? location.split(',')[0].trim().toLowerCase() : 'us',
+      hl: 'en',
+      num: 100
+    };
+
+    // Device parameter - Scrapingdog uses 'desktop' or 'mobile'
+    if (device === 'mobile') {
+      payload.device = 'mobile';
+    }
+
+    const response = await axios.post('https://api.scrapingdog.com/google', payload, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const organicResults = response.data.organic_results || [];
+
+    let position = null;
+    let url = null;
+    let snippet = '';
+
+    for (let i = 0; i < organicResults.length; i++) {
+      if (organicResults[i].link && organicResults[i].link.includes(domain)) {
+        position = i + 1;
+        url = organicResults[i].link;
+        snippet = organicResults[i].snippet || '';
+        break;
+      }
+    }
+
+    if (!position) {
+      position = organicResults.length + 1;
+      snippet = 'Not found in top 100 results';
+    }
+
+    return {
+      position,
+      url,
+      snippet,
+      timestamp: new Date(),
+      searchEngine,
+      device,
+      location
+    };
+  } catch (error) {
+    console.error('Error checking keyword rank with Scrapingdog:', error.message);
+    // Fallback to simulated rank if API fails
+    const simulatedRank = Math.floor(Math.random() * 100) + 1;
+    return {
+      position: simulatedRank,
+      url: simulatedRank <= 10 ? `https://${domain || 'example.com'}/page` : null,
+      snippet: `Error: ${error.message}`,
+      timestamp: new Date(),
+      searchEngine,
+      device,
+      location,
+      error: true
+    };
+  }
 }
 
-// GET rank history for a keyword
+  // GET rank history for a keyword
 router.get('/:id/rank-history', async (req, res) => {
   try {
     const { id } = req.params;

@@ -4,45 +4,9 @@ const Client = require('../models/Client');
 const Keyword = require('../models/Keyword');
 const auth = require('../middleware/auth');
 
-// POST /clients - create client (owner only)
-router.post('/', auth(['owner']), async (req, res) => {
-  try {
-    const clientData = req.body;
-    
-    // Create the client first
-    const client = new Client(clientData);
-    await client.save();
-    
-    // Process and create keyword records from onboarding data
-    await processOnboardingKeywords(client);
-    
-    res.status(201).json(client);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
 
-// POST /clients/demo - create client without auth (development only)
-router.post('/demo', async (req, res) => {
-  try {
-    console.log('Creating demo client with data:', req.body);
-    const clientData = req.body;
-    
-    // Create the client first
-    const client = new Client(clientData);
-    await client.save();
-    
-    console.log('Client saved successfully:', client._id);
-    
-    // Process and create keyword records from onboarding data
-    await processOnboardingKeywords(client);
-    
-    res.status(201).json(client);
-  } catch (err) {
-    console.error('Error creating demo client:', err);
-    res.status(400).json({ error: err.message });
-  }
-});
+
+
 
 // GET /clients - list clients (owner/employee only)
 router.get('/', auth(['owner', 'employee']), async (req, res) => {
@@ -63,7 +27,6 @@ router.get('/', auth(['owner', 'employee']), async (req, res) => {
 router.get('/demo', async (req, res) => {
   try {
     const clients = await Client.find({});
-    console.log(`Found ${clients.length} clients`);
     res.json(clients);
   } catch (err) {
     console.error('Error fetching demo clients:', err);
@@ -184,20 +147,7 @@ async function processOnboardingKeywords(client) {
   }
 }
 
-// GET /clients - list clients (owner/employee only)
-router.get('/', auth(['owner', 'employee']), async (req, res) => {
-  try {
-    // Owner/employee: see all, client: see only their own
-    let filter = {};
-    if (req.user.role === 'client') {
-      filter._id = req.user.clientId;
-    }
-    const clients = await Client.find(filter);
-    res.json(clients);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+
 
 // GET /clients/:id - get client by id (auth required, client can only access their own)
 router.get('/:id', auth(), async (req, res) => {
