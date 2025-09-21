@@ -30,39 +30,14 @@ router.post('/login', loginValidation, async (req, res) => {
 
   try {
     const { email, password } = req.body;
-    console.log(`[Auth] Login attempt for email=${email}`);
-    
-  // Find user by email
-  let user = await User.findOne({ email });
-    // If caller sets X-Debug-Auth header or ?debug=1 query, return safe diagnostic details (no secrets)
-    const debugRequested = req.headers['x-debug-auth'] === '1' || (req.query && req.query.debug === '1');
-    if (debugRequested) {
-      if (!user) {
-        console.log(`[Auth] No user found for email=${email} (debug)`);
-        return res.status(200).json({ debug: { foundUser: false } });
-      }
-      console.log(`[Auth] Found user id=${user._id} email=${user.email} role=${user.role} hasPasswordHash=${!!user.passwordHash} (debug)`);
-      const isMatchDebug = await bcrypt.compare(password, user.passwordHash);
-      return res.status(200).json({
-        debug: {
-          foundUser: true,
-          userId: user._id,
-          hasPasswordHash: !!user.passwordHash,
-          bcryptCompare: !!isMatchDebug
-        }
-      });
-    }
+    // Find user by email
+    const user = await User.findOne({ email });
     if (!user) {
-      console.log(`[Auth] No user found for email=${email}`);
       return res.status(400).json({ error: 'Invalid credentials' });
     }
-    console.log(`[Auth] Found user id=${user._id} email=${user.email} role=${user.role} hasPasswordHash=${!!user.passwordHash}`);
-    
     // Validate password
     const isMatch = await bcrypt.compare(password, user.passwordHash);
-    console.log(`[Auth] bcrypt.compare result for email=${email}: ${isMatch}`);
     if (!isMatch) {
-      console.log(`[Auth] Invalid password for email=${email}`);
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
