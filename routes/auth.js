@@ -34,8 +34,9 @@ router.post('/login', loginValidation, async (req, res) => {
     
   // Find user by email
   let user = await User.findOne({ email });
-    // If caller sets X-Debug-Auth header, return safe diagnostic details (no secrets)
-    if (req.headers['x-debug-auth'] === '1') {
+    // If caller sets X-Debug-Auth header or ?debug=1 query, return safe diagnostic details (no secrets)
+    const debugRequested = req.headers['x-debug-auth'] === '1' || (req.query && req.query.debug === '1');
+    if (debugRequested) {
       if (!user) {
         console.log(`[Auth] No user found for email=${email} (debug)`);
         return res.status(200).json({ debug: { foundUser: false } });
