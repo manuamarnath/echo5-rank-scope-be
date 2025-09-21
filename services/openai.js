@@ -1,7 +1,18 @@
 const OpenAI = require('openai');
 
+// Check if API key is configured
+if (!process.env.OPENAI_API_KEY) {
+  console.error('OPENAI_API_KEY environment variable is not set');
+}
+
+const isOpenRouter = process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.startsWith('sk-or-');
+console.log(`Using ${isOpenRouter ? 'OpenRouter' : 'OpenAI'} API`);
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
+  baseURL: isOpenRouter 
+    ? 'https://openrouter.ai/api/v1' 
+    : 'https://api.openai.com/v1',
 });
 
 async function getEmbeddings(texts) {
@@ -22,7 +33,7 @@ async function getEmbeddings(texts) {
   }
 }
 
-async function generateOutline(prompt, model = 'gpt-3.5-turbo') {
+async function generateOutline(prompt, model = 'openai/gpt-3.5-turbo') {
   try {
     const response = await openai.chat.completions.create({
       model: model,
@@ -43,7 +54,10 @@ async function generateOutline(prompt, model = 'gpt-3.5-turbo') {
 
 async function chatGPT(messages, options = {}) {
   try {
-    const { model = 'gpt-3.5-turbo', temperature = 0.7, max_tokens = 4000 } = options;
+    const { model = 'openai/gpt-3.5-turbo', temperature = 0.7, max_tokens = 4000 } = options;
+    
+    console.log(`Making request to model: ${model}`);
+    
     const response = await openai.chat.completions.create({
       model,
       messages,
@@ -52,7 +66,8 @@ async function chatGPT(messages, options = {}) {
     });
     return response.choices[0].message.content;
   } catch (error) {
-    console.error('Error in chatGPT:', error);
+    console.error('Error in chatGPT:', error.message);
+    console.error('Full error:', error);
     throw error;
   }
 }

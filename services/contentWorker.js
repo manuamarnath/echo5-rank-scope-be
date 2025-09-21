@@ -11,7 +11,7 @@ async function generateArticleFromOutline(outline, topic) {
       { role: 'user', content: userPrompt }
     ];
 
-    const articleContent = await chatGPT(messages, { model: 'gpt-4', temperature: 0.7 });
+    const articleContent = await chatGPT(messages, { model: 'meta-llama/llama-3.3-70b-instruct:free', temperature: 0.7 });
     return articleContent;
   } catch (error) {
     console.error('Error generating article:', error);
@@ -30,7 +30,7 @@ async function generateTaskContent(taskDescription, pageType) {
       { role: 'user', content: userPrompt }
     ];
 
-    const content = await chatGPT(messages, { model: 'gpt-4', temperature: 0.7 });
+    const content = await chatGPT(messages, { model: 'openai/gpt-4', temperature: 0.7 });
     return content;
   } catch (error) {
     console.error('Error generating task content:', error);

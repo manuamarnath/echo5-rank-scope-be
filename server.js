@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ path: __dirname + '/.env' });
 const express = require('express');
 const cron = require('node-cron');
 const cors = require('cors');
@@ -49,6 +49,7 @@ app.use('/pages', require('./routes/pages'));
 app.use('/briefs', require('./routes/briefs'));
 app.use('/tasks', require('./routes/tasks'));
 app.use('/report', require('./routes/report'));
+app.use('/content', require('./routes/content'));
 
 // Health check endpoints
 app.get('/health', (req, res) => {
