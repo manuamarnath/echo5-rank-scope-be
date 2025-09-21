@@ -12,11 +12,8 @@ const PORT = process.env.PORT || 5001; // Updated port comment
 // Security middleware
 app.use(helmet()); // Adds various HTTP headers for security
 
-// CORS configuration - allow multiple origins
+// CORS configuration - allow the deployed frontend origin
 const allowedOrigins = [
-  'http://localhost:3000',
-  'http://localhost:3001', 
-  'http://localhost:3003',
   'https://echo5-rank-scope-fe-e5i4.vercel.app'
 ];
 
