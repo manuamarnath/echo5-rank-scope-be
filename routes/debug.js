@@ -24,3 +24,13 @@ router.post('/auth-check', async (req, res) => {
 });
 
 module.exports = router;
+
+// Additional debug route to show commit sha
+router.get('/commit', (req, res) => {
+  try {
+    const sha = process.env.COMMIT_SHA || process.env.GIT_COMMIT || 'unknown';
+    res.json({ commit: sha });
+  } catch (err) {
+    res.status(500).json({ error: 'server error' });
+  }
+});
