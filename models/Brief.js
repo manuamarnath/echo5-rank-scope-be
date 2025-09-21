@@ -30,8 +30,18 @@ const briefSchema = new Schema({
     required: true,
     index: true
   },
+  goals: { type: String },
+  businessContext: { type: String },
+  targetAudience: { type: String },
+  keyMessages: { type: [String], default: [] },
+  toneOfVoice: { type: String },
+  keywords: { type: [String], default: [] },
+  seoFocus: { type: String },
+  uniqueSellingPoints: { type: [String], default: [] },
   outline: [outlineItemSchema],
   entities: [String],
+  targetKeywords: { type: [String], default: [] },
+  competitors: { type: [String], default: [] },
   faqs: [faqSchema],
   internalLinks: [internalLinkSchema],
   createdBy: {

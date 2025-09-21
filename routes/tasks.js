@@ -6,7 +6,7 @@ const auth = require('../middleware/auth');
 const { generateTaskContent } = require('../services/contentWorker');
 
 // Create task
-router.post('/tasks', auth(['owner', 'employee']), async (req, res) => {
+router.post('/', auth(['owner', 'employee']), async (req, res) => {
   try {
     const task = new Task(req.body);
     await task.save();
@@ -17,7 +17,7 @@ router.post('/tasks', auth(['owner', 'employee']), async (req, res) => {
 });
 
 // List tasks by client or assignedTo
-router.get('/tasks', auth(), async (req, res) => {
+router.get('/', auth(), async (req, res) => {
   try {
     const { clientId, assignedTo } = req.query;
     let filter = {};
@@ -33,7 +33,7 @@ router.get('/tasks', auth(), async (req, res) => {
 });
 
 // Update status/assignment
-router.put('/tasks/:id', auth(['owner', 'employee']), async (req, res) => {
+router.put('/:id', auth(['owner', 'employee']), async (req, res) => {
   try {
     const task = await Task.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!task) return res.status(404).json({ error: 'Task not found' });
@@ -44,7 +44,7 @@ router.put('/tasks/:id', auth(['owner', 'employee']), async (req, res) => {
 });
 
 // Delete task
-router.delete('/tasks/:id', auth(['owner', 'employee']), async (req, res) => {
+router.delete('/:id', auth(['owner', 'employee']), async (req, res) => {
   try {
     const task = await Task.findByIdAndDelete(req.params.id);
     if (!task) return res.status(404).json({ error: 'Task not found' });
@@ -55,7 +55,7 @@ router.delete('/tasks/:id', auth(['owner', 'employee']), async (req, res) => {
 });
 
 // Generate content for task
-router.post('/tasks/:id/generate-content', auth(), async (req, res) => {
+router.post('/:id/generate-content', auth(), async (req, res) => {
   try {
     const task = await Task.findById(req.params.id).populate('pageId');
     if (!task) return res.status(404).json({ error: 'Task not found' });
