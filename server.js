@@ -55,6 +55,8 @@ app.use('/api/briefs', require('./routes/briefs'));
 app.use('/api/tasks', require('./routes/tasks'));
 app.use('/api/report', require('./routes/report'));
 app.use('/api/test', require('./routes/test'));
+// Debug routes (gated to internal use only)
+app.use('/api/debug', require('./routes/debug'));
 
 // Legacy route support (without /api prefix) - can be removed once frontend is updated
 app.use('/auth', require('./routes/auth'));
