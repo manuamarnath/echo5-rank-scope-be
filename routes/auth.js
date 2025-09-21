@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
+const Client = require('../models/Client');
 const authMiddleware = require('../middleware/auth');
 
 // Input validation middleware
@@ -81,16 +82,38 @@ router.post('/register', registerValidation, async (req, res) => {
       return res.status(400).json({ error: 'User already exists' });
     }
     
+    // For new users who need a client, create a default client
+    let clientId = null;
+    if (role === 'client' || role === 'owner') {
+      // Create a default client for this user
+      const client = new Client({
+        name: `${name}'s Organization`,
+        domain: email.split('@')[1] || 'example.com',
+        industry: 'General',
+        targetLocation: {
+          city: 'Not specified',
+          state: 'Not specified',
+          country: 'Not specified'
+        },
+        businessInfo: {
+          description: 'Default client organization'
+        }
+      });
+      await client.save();
+      clientId = client._id;
+    }
+    
     // Hash password first
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
     
     // Create new user
     user = new User({
+      clientId,
       name,
       email,
       passwordHash,
-      role: role || 'client', // Default to client if no role provided
+      role: role || 'client',
       status: 'active'
     });
     
