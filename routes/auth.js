@@ -36,13 +36,11 @@ router.post('/login', loginValidation, async (req, res) => {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
     
-    // Check password
-    const isMatch = await bcrypt.compare(password, user.password);
+    // Validate password
+    const isMatch = await bcrypt.compare(password, user.passwordHash);
     if (!isMatch) {
-      return res.status(400).json({ error: 'Invalid credentials' });
-    }
-    
-    // Create JWT payload
+      return res.status(400).json({ message: 'Invalid credentials' });
+    }    // Create JWT payload
     const payload = {
       id: user.id,
       name: user.name,
@@ -83,17 +81,18 @@ router.post('/register', registerValidation, async (req, res) => {
       return res.status(400).json({ error: 'User already exists' });
     }
     
+    // Hash password first
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(password, salt);
+    
     // Create new user
     user = new User({
       name,
       email,
-      password,
-      role: role || 'client' // Default to client if no role provided
+      passwordHash,
+      role: role || 'client', // Default to client if no role provided
+      status: 'active'
     });
-    
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(password, salt);
     
     // Save user
     await user.save();
