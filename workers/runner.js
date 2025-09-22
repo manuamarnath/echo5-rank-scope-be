@@ -1,7 +1,7 @@
 // Worker runner - load processors and start BullMQ workers
 const path = require('path');
 const { Worker } = require('bullmq');
-const { connection, normalizeQueueName } = require('../lib/queues');
+const { connection, normalizeQueueName, isNoEvictionPolicy, getEvictionPolicy } = require('../lib/queues');
 
 // map queueName -> processor module
 const processors = [
@@ -12,6 +12,16 @@ const processors = [
 ];
 
 function startWorkers() {
+  // Check Redis eviction policy - fail fast if not noeviction
+  try {
+    if (!isNoEvictionPolicy()) {
+      const policy = getEvictionPolicy() || 'unknown';
+      console.error(`REFUSING to start workers: Redis maxmemory-policy is '${policy}'. Set to 'noeviction' to ensure queue reliability.`);
+      return;
+    }
+  } catch (e) {
+    console.warn('Could not determine Redis eviction policy, continuing to start workers (conservative)');
+  }
   processors.forEach(p => {
     const qName = normalizeQueueName(p.queue);
     try {

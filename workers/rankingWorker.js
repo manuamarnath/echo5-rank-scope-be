@@ -2,7 +2,7 @@
 let rankingQueue = null; // exported wrapper
 const { updateAllRankings, updatePageRankings } = require('../services/rankingService');
 
-const { createQueue, connection: sharedConnection, normalizeQueueName } = require('../lib/queues');
+const { createQueue, connection: sharedConnection, normalizeQueueName, isNoEvictionPolicy, getEvictionPolicy } = require('../lib/queues');
 
 // Internal refs (will be swapped when Redis becomes ready)
 let internalQueue = null;
@@ -42,6 +42,17 @@ function initBullmq() {
     const { Worker } = require('bullmq');
     const queueName = normalizeQueueName('ranking-updates');
     internalQueue = createQueue(queueName);
+
+    // Check policy before starting worker
+    try {
+      if (!isNoEvictionPolicy()) {
+        const policy = getEvictionPolicy() || 'unknown';
+        console.error(`REFUSING to start ranking worker: Redis maxmemory-policy is '${policy}'. Set to 'noeviction' to ensure queue reliability.`);
+        return;
+      }
+    } catch (e) {
+      console.warn('Could not determine Redis eviction policy; proceeding cautiously');
+    }
 
     if (!sharedConnection || sharedConnection.status !== 'ready') {
       console.warn('Shared Redis connection not ready; delaying worker start');

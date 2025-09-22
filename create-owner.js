@@ -1,87 +1,56 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const User = require('./models/User');
+const Client = require('./models/Client');
+require('dotenv').config();
 
-// Environment variables
-const MONGO_URI = 'mongodb+srv://rank-scope:rank-scope@cluster0.rxzsush.mongodb.net/echo5-rankscope?retryWrites=true&w=majority&appName=Cluster0';
+const MONGO_URI = process.env.MONGO_URI;
 
-// User schema (matching the model)
-const userSchema = new mongoose.Schema({
-  clientId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Client',
-    required: function() { return this.role !== 'owner'; } // Not required for owners
-  },
-  name: {
-    type: String,
-    required: true
-  },
-  email: {
-    type: String,
-    required: true,
-    unique: true
-  },
-  role: {
-    type: String,
-    enum: ['owner', 'employee', 'client'],
-    required: true
-  },
-  passwordHash: {
-    type: String,
-    required: true
-  },
-  status: {
-    type: String,
-    enum: ['active', 'blocked'],
-    default: 'active'
-  }
-}, {
-  timestamps: true
-});
-
-const User = mongoose.model('User', userSchema);
-
-const createOwnerUser = async () => {
+async function createOwner() {
   try {
-    // Connect to MongoDB
     await mongoose.connect(MONGO_URI);
     console.log('MongoDB connected');
-    
-    // Check if user already exists
-    const existingUser = await User.findOne({ email: 'owner@mail.com' });
-    if (existingUser) {
-      console.log('User already exists');
+
+    const existing = await User.findOne({ email: 'owner@mail.com' });
+    if (existing) {
+      console.log('Owner already exists:', existing.email);
       await mongoose.connection.close();
-      process.exit(0);
+      return;
     }
-    
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash('owner123', salt);
-    
-    // Create user
+
+    // Ensure a client exists for owner
+    let ownerClient = await Client.findOne({ name: 'Owner Organization' });
+    if (!ownerClient) {
+      ownerClient = new Client({
+        name: 'Owner Organization',
+        domain: 'owner.example.com',
+        industry: 'Technology'
+      });
+      await ownerClient.save();
+    }
+
+    const password = 'owner123';
+    const hashedPassword = await bcrypt.hash(password, 12);
+
     const newUser = new User({
+      clientId: ownerClient._id,
       name: 'Owner',
       email: 'owner@mail.com',
       passwordHash: hashedPassword,
-      role: 'admin',
+      role: 'owner',
       status: 'active'
     });
-    
-    await user.save();
-    console.log('Owner user created successfully:', {
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role
-    });
-    
-    await mongoose.connection.close();
-    process.exit(0);
-  } catch (error) {
-    console.error('Error creating user:', error);
-    await mongoose.connection.close();
-    process.exit(1);
-  }
-};
 
-createOwnerUser();
+    await newUser.save();
+    console.log('Owner user created successfully');
+    console.log('Email: owner@mail.com');
+    console.log('Password:', password);
+
+  } catch (err) {
+    console.error('Error creating owner:', err);
+  } finally {
+    await mongoose.connection.close();
+  }
+}
+
+createOwner();

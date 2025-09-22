@@ -6,17 +6,19 @@ const Page = require('../models/Page');
 const Brief = require('../models/Brief');
 const Task = require('../models/Task');
 const auth = require('../middleware/auth');
-const AWS = require('aws-sdk');
+const { S3Client, PutObjectCommand, ListObjectsV2Command } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { Parser } = require('json2csv');
 
-// Configure AWS SDK for S3/Backblaze B2
-const s3 = new AWS.S3({
+// Configure AWS SDK v3 S3 client for S3/Backblaze B2 (S3-compatible)
+const s3Client = new S3Client({
   endpoint: process.env.B2_ENDPOINT || 'https://s3.us-west-001.backblazeb2.com',
-  accessKeyId: process.env.B2_ACCESS_KEY_ID,
-  secretAccessKey: process.env.B2_SECRET_ACCESS_KEY,
   region: process.env.B2_REGION || 'us-west-001',
-  s3ForcePathStyle: true,
-  signatureVersion: 'v4'
+  credentials: {
+    accessKeyId: process.env.B2_ACCESS_KEY_ID,
+    secretAccessKey: process.env.B2_SECRET_ACCESS_KEY,
+  },
+  forcePathStyle: true
 });
 
 const BUCKET_NAME = process.env.B2_BUCKET_NAME || 'rankscope-reports';
@@ -90,14 +92,22 @@ router.post('/internal-report', auth(['owner', 'employee']), async (req, res) =>
       ACL: 'private'
     };
     
-    const uploadResult = await s3.upload(uploadParams).promise();
-    
-    // Generate signed URL (valid for 7 days)
-    const signedUrl = s3.getSignedUrl('getObject', {
-      Bucket: BUCKET_NAME,
-      Key: `reports/${filename}`,
-      Expires: 7 * 24 * 60 * 60 // 7 days
+    // Upload using PutObjectCommand
+    const putCmd = new PutObjectCommand({
+      Bucket: uploadParams.Bucket,
+      Key: uploadParams.Key,
+      Body: uploadParams.Body,
+      ContentType: uploadParams.ContentType,
+      ACL: uploadParams.ACL
     });
+
+    const uploadResult = await s3Client.send(putCmd);
+
+    // Generate signed URL (valid for 7 days)
+    const signedUrl = await getSignedUrl(s3Client, new (require('@aws-sdk/client-s3').GetObjectCommand)({
+      Bucket: BUCKET_NAME,
+      Key: `reports/${filename}`
+    }), { expiresIn: 7 * 24 * 60 * 60 });
 
     res.json({ 
       summary: reportData.summary,
@@ -122,17 +132,26 @@ router.get('/reports', auth(['owner', 'employee']), async (req, res) => {
       Prefix: 'reports/'
     };
     
-    const result = await s3.listObjectsV2(params).promise();
-    const reports = result.Contents?.map(obj => ({
+    const listCmd = new ListObjectsV2Command(params);
+    const result = await s3Client.send(listCmd);
+    const reports = (result.Contents || []).map(obj => ({
       filename: obj.Key.replace('reports/', ''),
       size: obj.Size,
       lastModified: obj.LastModified,
-      url: s3.getSignedUrl('getObject', {
-        Bucket: BUCKET_NAME,
-        Key: obj.Key,
-        Expires: 24 * 60 * 60 // 24 hours
-      })
-    })) || [];
+      url: null // will be filled below
+    }));
+
+    // Generate presigned URLs for each object (24 hours)
+    const { GetObjectCommand } = require('@aws-sdk/client-s3');
+    for (let i = 0; i < reports.length; i++) {
+      const key = `reports/${reports[i].filename}`;
+      try {
+        reports[i].url = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: BUCKET_NAME, Key: key }), { expiresIn: 24 * 60 * 60 });
+      } catch (err) {
+        console.error('Error generating presigned URL for', key, err);
+        reports[i].url = null;
+      }
+    }
     
     res.json(reports);
   } catch (err) {
