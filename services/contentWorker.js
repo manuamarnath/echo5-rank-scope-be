@@ -1,4 +1,4 @@
-const { chatGPT } = require('./openai.js');
+const { chatGPT, OPENAI_MODEL } = require('./openai.js');
 
 // Stronger system prompt that instructs the model to avoid verbatim copying and
 // to produce original, paraphrased content. We append a short originality
@@ -14,7 +14,7 @@ async function generateArticleFromOutline(outline, topic) {
       { role: 'user', content: userPrompt }
     ];
 
-    const articleContent = await chatGPT(messages, { model: 'meta-llama/llama-3.3-70b-instruct:free', temperature: 0.7 });
+  const articleContent = await chatGPT(messages, { model: OPENAI_MODEL, temperature: 0.7 });
     // The returned content will include the Originality Declaration as requested above.
     return articleContent;
   } catch (error) {
@@ -34,7 +34,7 @@ async function generateTaskContent(taskDescription, pageType) {
       { role: 'user', content: userPrompt }
     ];
 
-    const content = await chatGPT(messages, { model: 'openai/gpt-4', temperature: 0.7 });
+  const content = await chatGPT(messages, { model: OPENAI_MODEL, temperature: 0.7 });
     return content;
   } catch (error) {
     console.error('Error generating task content:', error);

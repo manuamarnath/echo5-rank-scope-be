@@ -8,7 +8,7 @@ Please migrate your code to use AWS SDK for JavaScript (v3).
 For more information, check the blog post at https://a.co/cUPnyil
 (Use `node --trace-warnings ...` to show where the warning was created)
 MongoDB Atlas connected
-Making request to model: meta-llama/llama-3.3-70b-instruct:free
-Making request to model: meta-llama/llama-3.3-70b-instruct:free
-Making request to model: meta-llama/llama-3.3-70b-instruct:free
-Making request to model: meta-llama/llama-3.3-70b-instruct:free
+Making request to model: OPENAI_MODEL
+Making request to model: OPENAI_MODEL
+Making request to model: OPENAI_MODEL
+Making request to model: OPENAI_MODEL

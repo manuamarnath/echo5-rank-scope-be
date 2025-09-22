@@ -10,7 +10,7 @@ async function expandKeywords(promptText) {
   if (!process.env.OPENAI_API_KEY) return [];
   try {
     const userPrompt = `Generate 10 high-quality secondary keywords and 10 localized keyword variants for: ${promptText}. Return JSON { "secondary": [..], "localized": [..] }`;
-    const response = await chatGPT([{ role: 'system', content: 'You are a helpful SEO assistant.' }, { role: 'user', content: userPrompt }], { model: 'openai/gpt-3.5-turbo', max_tokens: 600 });
+  const response = await chatGPT([{ role: 'system', content: 'You are a helpful SEO assistant.' }, { role: 'user', content: userPrompt }], { max_tokens: 600 });
     // Try to parse JSON out of response
     const jsonStart = response.indexOf('{');
     const json = jsonStart >= 0 ? response.slice(jsonStart) : response;
@@ -26,7 +26,7 @@ async function generateAnswerCard(promptText) {
   if (!process.env.OPENAI_API_KEY) return '';
   try {
     const assistantPrompt = `Write a concise AEO-friendly answer card (50-80 words) for: ${promptText}`;
-    const answer = await chatGPT([{ role: 'system', content: 'You are an expert SEO content writer focusing on local services.' }, { role: 'user', content: assistantPrompt }], { model: 'openai/gpt-3.5-turbo', max_tokens: 200 });
+  const answer = await chatGPT([{ role: 'system', content: 'You are an expert SEO content writer focusing on local services.' }, { role: 'user', content: assistantPrompt }], { max_tokens: 200 });
     return answer.trim();
   } catch (err) {
     console.warn('Answer card generation failed:', err && err.message ? err.message : err);

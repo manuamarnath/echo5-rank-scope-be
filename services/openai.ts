@@ -2,13 +2,14 @@ import axios from 'axios';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_BASE_URL = 'https://api.openai.com/v1';
+export const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
 
 export async function getEmbeddings(input: string | string[]) {
   const response = await axios.post(
     `${OPENAI_BASE_URL}/embeddings`,
     {
       input,
-      model: 'text-embedding-ada-002',
+      model: process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-ada-002',
     },
     {
       headers: {
@@ -24,7 +25,7 @@ export async function chatGPT(messages: { role: string; content: string }[], opt
   const response = await axios.post(
     `${OPENAI_BASE_URL}/chat/completions`,
     {
-      model: options?.model || 'gpt-3.5-turbo',
+      model: options?.model || OPENAI_MODEL,
       messages,
       temperature: options?.temperature ?? 0.7,
     },

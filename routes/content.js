@@ -1,12 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const { chatGPT, getEmbeddings } = require('../services/openai');
+const { chatGPT, getEmbeddings, OPENAI_MODEL } = require('../services/openai');
 const auth = require('../middleware/auth');
 
 // Test endpoint without auth for testing
 router.post('/test', async (req, res) => {
   try {
-    const { prompt, model = 'meta-llama/llama-3.3-70b-instruct:free', temperature = 0.7, max_tokens = 2048, originality_proof } = req.body;
+    const { prompt, model = OPENAI_MODEL, temperature = 0.7, max_tokens = 2048, originality_proof } = req.body;
 
     if (!prompt) {
       return res.status(400).json({ error: 'Prompt is required' });
@@ -116,7 +116,7 @@ router.post('/test', async (req, res) => {
 // Generate content using ChatGPT (temporarily without auth for testing)
 router.post('/generate', async (req, res) => {
   try {
-    const { prompt, model = 'meta-llama/llama-3.3-70b-instruct:free', temperature = 0.7, max_tokens = 2048 } = req.body;
+    const { prompt, model = OPENAI_MODEL, temperature = 0.7, max_tokens = 2048 } = req.body;
     
     if (!prompt) {
       return res.status(400).json({ error: 'Prompt is required' });

@@ -3,15 +3,16 @@ try { require('dotenv').config(); } catch (e) { /* ignore if already loaded */ }
 
 const OpenAI = require('openai');
 
-const isOpenRouter = process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.startsWith('sk-or-');
+// Allow overriding model via env var; default to gpt-5-mini for OpenAI
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
 
 let openai = null;
 if (process.env.OPENAI_API_KEY) {
   try {
-    console.log(`Using ${isOpenRouter ? 'OpenRouter' : 'OpenAI'} API`);
+    console.log(`Using OpenAI API, model default: ${OPENAI_MODEL}`);
     openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
-      baseURL: isOpenRouter ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1',
+      baseURL: 'https://api.openai.com/v1',
     });
   } catch (err) {
     console.warn('OpenAI client initialization failed:', err && err.message ? err.message : err);
@@ -33,7 +34,7 @@ async function getEmbeddings(texts) {
   }
 }
 
-async function generateOutline(prompt, model = 'openai/gpt-3.5-turbo') {
+async function generateOutline(prompt, model = OPENAI_MODEL) {
   if (!openai) throw new Error('OpenAI not configured');
   try {
     const response = await openai.chat.completions.create({
@@ -55,7 +56,7 @@ async function generateOutline(prompt, model = 'openai/gpt-3.5-turbo') {
 async function chatGPT(messages, options = {}) {
   if (!openai) throw new Error('OpenAI not configured');
   try {
-    const { model = 'openai/gpt-3.5-turbo', temperature = 0.7, max_tokens = 4000 } = options;
+    const { model = OPENAI_MODEL, temperature = 0.7, max_tokens = 4000 } = options;
     const response = await openai.chat.completions.create({ model, messages, temperature, max_tokens });
     return response.choices[0].message.content;
   } catch (error) {
@@ -64,4 +65,4 @@ async function chatGPT(messages, options = {}) {
   }
 }
 
-module.exports = { getEmbeddings, generateOutline, chatGPT };
+module.exports = { getEmbeddings, generateOutline, chatGPT, OPENAI_MODEL };
