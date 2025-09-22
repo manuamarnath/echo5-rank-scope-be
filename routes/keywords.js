@@ -440,7 +440,7 @@ router.get('/primary', async (req, res) => {
 // POST check keyword ranks
 router.post('/check-ranks', async (req, res) => {
   try {
-    const { clientId, keywordIds, domain, searchEngine = 'google', device = 'desktop', location = '' } = req.body;
+  const { clientId, keywordIds, domain, searchEngine = 'google', device = 'desktop', location = '', gl = null, hl = null } = req.body;
 
     if (!clientId || !keywordIds || !Array.isArray(keywordIds) || keywordIds.length === 0 || !domain) {
       return res.status(400).json({ 
@@ -464,7 +464,7 @@ router.post('/check-ranks', async (req, res) => {
     for (const keyword of keywords) {
       try {
         // Simulate rank checking (replace with actual rank checking service)
-        const rankResult = await checkKeywordRank(keyword.text, domain, searchEngine, device, location);
+  const rankResult = await checkKeywordRank(keyword.text, domain, searchEngine, device, location, gl, hl);
         
         // Update keyword with new rank data
         const previousRank = keyword.currentRank;
@@ -533,15 +533,90 @@ router.post('/check-ranks', async (req, res) => {
   }
 });
 
-// Helper function to check keyword rank using Scrapingdog SERP API
-async function checkKeywordRank(keyword, domain, searchEngine, device, location) {
+// POST check single keyword rank (per-keyword endpoint for incremental UI)
+router.post('/check-rank', async (req, res) => {
+  try {
+    const { keywordId, clientId, domain, searchEngine = 'google', device = 'desktop', location = '', gl = null, hl = null } = req.body;
+
+    if (!keywordId || !clientId || !domain) {
+      return res.status(400).json({ error: 'keywordId, clientId, and domain are required' });
+    }
+
+    const keyword = await Keyword.findOne({ _id: keywordId, clientId });
+    if (!keyword) {
+      return res.status(404).json({ error: 'Keyword not found' });
+    }
+
+    const rankResult = await checkKeywordRank(keyword.text, domain, searchEngine, device, location, gl, hl);
+
+    const previousRank = keyword.currentRank;
+    keyword.previousRank = previousRank;
+    keyword.currentRank = rankResult.position;
+    keyword.lastRankCheck = new Date();
+
+    if (rankResult.position) {
+      if (!keyword.bestRank || rankResult.position < keyword.bestRank) keyword.bestRank = rankResult.position;
+      if (!keyword.worstRank || rankResult.position > keyword.worstRank) keyword.worstRank = rankResult.position;
+    }
+
+    keyword.rankHistory.push({
+      position: rankResult.position,
+      url: rankResult.url,
+      searchEngine,
+      device,
+      location,
+      checkedAt: new Date()
+    });
+
+    if (keyword.rankHistory.length > 100) keyword.rankHistory = keyword.rankHistory.slice(-100);
+
+    await keyword.save();
+
+    return res.json({
+      keyword: keyword.text,
+      keywordId: keyword._id,
+      position: rankResult.position,
+      url: rankResult.url,
+      searchEngine,
+      device,
+      location,
+      checkedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error checking single keyword rank:', error);
+    res.status(500).json({ error: 'Failed to check keyword rank', details: error.message });
+  }
+});
+
+const rankingService = require('../services/rankingService');
+
+// Helper function to check keyword rank using SerpApi (preferred) or Scrapingdog as fallback
+async function checkKeywordRank(keyword, domain, searchEngine, device, location, gl = null, hl = null) {
+  // Prefer SerpApi via rankingService.getSERPRanking when available
+  try {
+  const serpRes = await rankingService.getSERPRanking(keyword, domain, { num: 100, location: location || undefined, device, gl, hl });
+    if (serpRes && typeof serpRes.position !== 'undefined') {
+      return {
+        position: serpRes.position,
+        url: serpRes.url || null,
+        snippet: serpRes.snippet || '',
+        timestamp: new Date(),
+        searchEngine,
+        device,
+        location
+      };
+    }
+  } catch (err) {
+    console.warn('SerpApi rank check failed, falling back to Scrapingdog:', err && err.message ? err.message : err);
+  }
+
+  // Fallback to Scrapingdog if SerpApi didn't return a result or is not configured
   try {
     const apiKey = process.env.SCRAPINGDOG_API_KEY;
     if (!apiKey) {
       throw new Error('SCRAPINGDOG_API_KEY environment variable is not set');
     }
 
-    // Scrapingdog parameters
     const payload = {
       api_key: apiKey,
       query: keyword,
@@ -550,24 +625,14 @@ async function checkKeywordRank(keyword, domain, searchEngine, device, location)
       hl: 'en',
       num: 100
     };
+    if (device === 'mobile') payload.device = 'mobile';
 
-    // Device parameter - Scrapingdog uses 'desktop' or 'mobile'
-    if (device === 'mobile') {
-      payload.device = 'mobile';
-    }
-
-    const response = await axios.post('https://api.scrapingdog.com/google', payload, {
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    });
-
+    const response = await axios.post('https://api.scrapingdog.com/google', payload, { headers: { 'Content-Type': 'application/json' } });
     const organicResults = response.data.organic_results || [];
 
     let position = null;
     let url = null;
     let snippet = '';
-
     for (let i = 0; i < organicResults.length; i++) {
       if (organicResults[i].link && organicResults[i].link.includes(domain)) {
         position = i + 1;
@@ -576,7 +641,6 @@ async function checkKeywordRank(keyword, domain, searchEngine, device, location)
         break;
       }
     }
-
     if (!position) {
       position = organicResults.length + 1;
       snippet = 'Not found in top 100 results';
@@ -592,7 +656,7 @@ async function checkKeywordRank(keyword, domain, searchEngine, device, location)
       location
     };
   } catch (error) {
-    console.error('Error checking keyword rank with Scrapingdog:', error.message);
+    console.error('Error checking keyword rank with Scrapingdog fallback:', error && error.message ? error.message : error);
     return {
       position: null,
       url: null,
@@ -601,7 +665,7 @@ async function checkKeywordRank(keyword, domain, searchEngine, device, location)
       searchEngine,
       device,
       location,
-      error: error.message
+      error: error && error.message ? error.message : String(error)
     };
   }
 }

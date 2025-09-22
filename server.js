@@ -12,24 +12,43 @@ const PORT = process.env.PORT || 5001; // Updated port comment
 // Security middleware
 app.use(helmet()); // Adds various HTTP headers for security
 
-// CORS configuration - allow the deployed frontend origin
-const allowedOrigins = [
-  'https://echo5-rank-scope-fe-e5i4.vercel.app'
-];
+// CORS configuration - allow the deployed frontend origin and local dev origins
+const deployedFrontend = process.env.FRONTEND_URL || 'https://echo5-rank-scope-fe-e5i4.vercel.app';
 
-// In development we want to allow local frontend dev servers to call the backend
-// (e.g. http://localhost:3000). In production we keep the stricter allowlist.
-if (process.env.NODE_ENV !== 'production') {
-  // Permissive during local development: allow any origin (but keep credentials enabled)
-  app.use(cors({ origin: true, credentials: true }));
-  console.log('CORS: permissive mode enabled for development');
+// Allowlist includes the deployed frontend and common localhost dev origins
+const allowedOrigins = new Set([
+  deployedFrontend,
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost:5173', // Vite default
+  'http://127.0.0.1:5173'
+]);
+
+// In development we allow common local dev origins and any origin when explicitly desired
+if (process.env.NODE_ENV === 'development') {
+  const devCorsOptions = {
+    origin: function (origin, callback) {
+      // If no origin (server-to-server or curl), allow
+      if (!origin) return callback(null, true);
+      // Allow if in the allowlist, otherwise fall back to permissive for local dev (but log)
+      if (allowedOrigins.has(origin)) return callback(null, true);
+      console.log('CORS: allowing development origin:', origin);
+      return callback(null, true);
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    credentials: true,
+    preflightContinue: false,
+    optionsSuccessStatus: 204
+  };
+  app.use(cors(devCorsOptions));
+  console.log('CORS: development mode — allowing local dev origins and FRONTEND_URL');
 } else {
   const corsOptions = {
     origin: function (origin, callback) {
       // Allow requests with no origin (like mobile apps or curl requests)
       if (!origin) return callback(null, true);
-      
-      if (allowedOrigins.indexOf(origin) !== -1) {
+      if (allowedOrigins.has(origin)) {
         callback(null, true);
       } else {
         console.log('CORS blocked origin:', origin);
@@ -37,8 +56,10 @@ if (process.env.NODE_ENV !== 'production') {
       }
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    credentials: true,
+    preflightContinue: false,
+    optionsSuccessStatus: 204
   };
   app.use(cors(corsOptions));
 }

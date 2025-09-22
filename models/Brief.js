@@ -47,7 +47,9 @@ const briefSchema = new Schema({
   createdBy: {
     type: Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    // createdBy is optional for automated/worker-generated briefs
+    // if you need strict attribution, ensure a userId is provided to the accept flow
+    required: false
   }
 }, {
   timestamps: true
