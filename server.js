@@ -17,23 +17,31 @@ const allowedOrigins = [
   'https://echo5-rank-scope-fe-e5i4.vercel.app'
 ];
 
-const corsOptions = {
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      console.log('CORS blocked origin:', origin);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
-};
-app.use(cors(corsOptions));
+// In development we want to allow local frontend dev servers to call the backend
+// (e.g. http://localhost:3000). In production we keep the stricter allowlist.
+if (process.env.NODE_ENV !== 'production') {
+  // Permissive during local development: allow any origin (but keep credentials enabled)
+  app.use(cors({ origin: true, credentials: true }));
+  console.log('CORS: permissive mode enabled for development');
+} else {
+  const corsOptions = {
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      
+      if (allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        console.log('CORS blocked origin:', origin);
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
+  };
+  app.use(cors(corsOptions));
+}
 
 // Rate limiting
 const apiLimiter = rateLimit({
