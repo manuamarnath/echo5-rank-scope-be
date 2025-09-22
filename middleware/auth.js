@@ -37,8 +37,12 @@ function authMiddleware(requiredRoles = roles) {
         });
       }
       
-      // Attach user info to request
+      // Attach user info to request. Keep both `id` and `_id` for compatibility
+      // with existing code that expects `req.user._id` (Mongoose style).
       req.user = decoded;
+      if (decoded.id && !decoded._id) {
+        req.user._id = decoded.id;
+      }
       
       // Check role permissions
       if (!requiredRoles.includes(decoded.role)) {

@@ -64,11 +64,16 @@ router.post('/', auth(['owner', 'employee']), async (req, res) => {
       return res.status(400).json({ error: 'Validation error', message: 'Both name and baseUrl are required' });
     }
 
+    const userId = req.user && (req.user._id || req.user.id);
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required', message: 'User id not found on token' });
+    }
+
     const audit = new SiteAudit({
       name,
       baseUrl,
       clientId,
-      userId: req.user._id,
+      userId,
       crawlSettings: {
         maxPages: crawlSettings?.maxPages || 500,
         respectRobotsTxt: crawlSettings?.respectRobotsTxt !== false,
