@@ -57,8 +57,22 @@ app.use(express.json({ limit: '1mb' })); // Limit payload size
 // Routes - Standardized with /api prefix for consistency
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/audits', require('./routes/audits'));
+app.use('/api/local-opportunities', require('./routes/localOpportunities'));
+app.use('/api/queue-health', require('./routes/queueHealth'));
+
+// Development helper to start workers (do not enable in production)
+if (process.env.NODE_ENV !== 'production') {
+  try {
+    // Lazy-load worker runner so it doesn't affect production memory footprint
+    require('./workers/runner');
+  } catch (err) {
+    console.warn('Failed to start workers locally:', err.message || err);
+  }
+}
 app.use('/api/clients', require('./routes/clients'));
 app.use('/api/keywords', require('./routes/keywords'));
+app.use('/api/keyword-map', require('./routes/keywordMap'));
+app.use('/api/blog-ideas', require('./routes/blogIdeas'));
 app.use('/api/pages', require('./routes/pages'));
 app.use('/api/briefs', require('./routes/briefs'));
 app.use('/api/tasks', require('./routes/tasks'));

@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+  "backfill": "node scripts/backfillKeywordMap.js",
+  "run-local-test": "node scripts/runLocalTest.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
