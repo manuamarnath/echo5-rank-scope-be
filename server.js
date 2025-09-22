@@ -48,6 +48,7 @@ app.use(express.json({ limit: '1mb' })); // Limit payload size
 
 // Routes - Standardized with /api prefix for consistency
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/audits', require('./routes/audits'));
 app.use('/api/clients', require('./routes/clients'));
 app.use('/api/keywords', require('./routes/keywords'));
 app.use('/api/pages', require('./routes/pages'));
@@ -59,6 +60,7 @@ app.use('/api/test', require('./routes/test'));
 // Legacy route support (without /api prefix) - can be removed once frontend is updated
 // Legacy route support (without /api prefix) - can be removed once frontend is updated
 app.use('/auth', require('./routes/auth'));
+app.use('/audits', require('./routes/audits'));
 app.use('/clients', require('./routes/clients'));
 app.use('/keywords', require('./routes/keywords'));
 app.use('/pages', require('./routes/pages'));
