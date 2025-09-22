@@ -59,6 +59,11 @@ router.post('/', auth(['owner', 'employee']), async (req, res) => {
   try {
     const { name, baseUrl, clientId, crawlSettings } = req.body;
 
+    // Basic validation: name and baseUrl are required
+    if (!name || !baseUrl) {
+      return res.status(400).json({ error: 'Validation error', message: 'Both name and baseUrl are required' });
+    }
+
     const audit = new SiteAudit({
       name,
       baseUrl,
@@ -82,6 +87,10 @@ router.post('/', auth(['owner', 'employee']), async (req, res) => {
     res.status(201).json(audit);
   } catch (error) {
     console.error('Error creating audit:', error);
+    // In development expose error.message to help debugging
+    if (process.env.NODE_ENV !== 'production') {
+      return res.status(500).json({ error: 'Failed to create audit', message: error.message });
+    }
     res.status(500).json({ error: 'Failed to create audit' });
   }
 });
