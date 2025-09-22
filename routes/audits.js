@@ -190,22 +190,55 @@ async function startCrawl(auditId) {
 
     const crawledUrls = [];
     const visitedUrls = new Set();
-    const queue = [audit.baseUrl];
+    // Normalize starting URL by stripping fragments
+    const normalize = (u) => {
+      try {
+        const parsed = new URL(u);
+        return parsed.origin + parsed.pathname + parsed.search; // remove hash/fragment
+      } catch (e) {
+        return u;
+      }
+    };
+    const queue = [normalize(audit.baseUrl)];
+
+    // Simple delay helper
+    const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    // Fetch with retries and exponential backoff
+    const fetchWithRetries = async (url, opts = {}, retries = 3, backoff = 500) => {
+      for (let attempt = 1; attempt <= retries; attempt += 1) {
+        try {
+          return await axios.get(url, opts);
+        } catch (err) {
+          const isLast = attempt === retries;
+          const code = err.code || err.response?.status;
+          console.warn(`Fetch attempt ${attempt} for ${url} failed:`, err.message || code);
+          if (isLast) throw err;
+          // exponential backoff
+          await delay(backoff * attempt);
+        }
+      }
+    };
 
     while (queue.length > 0 && crawledUrls.length < audit.crawlSettings.maxPages) {
-      const currentUrl = queue.shift();
-      
+      // Pull and normalize current URL (strip fragments)
+      let currentUrl = queue.shift();
+      currentUrl = normalize(currentUrl);
+
       if (visitedUrls.has(currentUrl)) continue;
       visitedUrls.add(currentUrl);
 
       try {
         const startTime = Date.now();
-        const response = await axios.get(currentUrl, {
-          timeout: 10000,
+        // polite delay between requests to avoid rate-limiting
+        await delay(200);
+        const response = await fetchWithRetries(currentUrl, {
+          timeout: 20000, // increased timeout
+          maxRedirects: 5,
           headers: {
             'User-Agent': audit.crawlSettings.userAgent
           }
-        });
+        }, 3, 700);
         const responseTime = Date.now() - startTime;
 
         const $ = cheerio.load(response.data);
@@ -216,21 +249,21 @@ async function startCrawl(auditId) {
           contentType: response.headers['content-type'],
           title: $('title').text().trim(),
           metaDescription: $('meta[name="description"]').attr('content') || '',
-          metaKeywords: ($('meta[name="keywords"]').attr('content') || '').split(',').map(k => k.trim()).filter(k => k),
+          metaKeywords: ($('meta[name="keywords"]').attr('content') || '').split(',').map((k) => k.trim()).filter((k) => k),
           h1: $('h1').map((i, el) => $(el).text().trim()).get(),
           h2: $('h2').map((i, el) => $(el).text().trim()).get(),
           h3: $('h3').map((i, el) => $(el).text().trim()).get(),
           h4: $('h4').map((i, el) => $(el).text().trim()).get(),
           h5: $('h5').map((i, el) => $(el).text().trim()).get(),
           h6: $('h6').map((i, el) => $(el).text().trim()).get(),
-          wordCount: $('body').text().split(/\s+/).filter(word => word.length > 0).length,
+          wordCount: $('body').text().split(/\s+/).filter((word) => word.length > 0).length,
           internalLinks: [],
           externalLinks: [],
           images: [],
           canonicalUrl: $('link[rel="canonical"]').attr('href') || '',
           robotsMeta: $('meta[name="robots"]').attr('content') || '',
           responseTime: responseTime,
-          contentLength: parseInt(response.headers['content-length']) || 0,
+          contentLength: parseInt(response.headers['content-length'] || '0', 10) || 0,
           language: $('html').attr('lang') || '',
           schemaMarkup: $('script[type="application/ld+json"]').map((i, el) => $(el).text()).get(),
           socialMeta: {
@@ -249,7 +282,9 @@ async function startCrawl(auditId) {
           if (!href) return;
 
           try {
-            const absoluteUrl = new URL(href, currentUrl).href;
+            // Normalize and strip fragments from discovered links
+            const abs = new URL(href, currentUrl);
+            const absoluteUrl = abs.origin + abs.pathname + abs.search;
             const baseHostname = new URL(audit.baseUrl).hostname;
             const isInternal = absoluteUrl.includes(baseHostname);
             
@@ -259,16 +294,16 @@ async function startCrawl(auditId) {
               nofollow: $(el).attr('rel')?.includes('nofollow') || false
             };
 
-          if (isInternal) {
-            urlData.internalLinks.push(linkData);
-            if (!visitedUrls.has(absoluteUrl) && !queue.includes(absoluteUrl)) {
-              queue.push(absoluteUrl);
+            if (isInternal) {
+              urlData.internalLinks.push(linkData);
+              if (!visitedUrls.has(absoluteUrl) && !queue.includes(absoluteUrl)) {
+                queue.push(absoluteUrl);
+              }
+            } else {
+              urlData.externalLinks.push(linkData);
             }
-          } else {
-            urlData.externalLinks.push(linkData);
-          }
           } catch (error) {
-            console.error(`Error parsing URL ${href}:`, error.message);
+            console.error(`Error parsing URL ${href}:`, error.message || error);
           }
         });
 
@@ -280,8 +315,8 @@ async function startCrawl(auditId) {
             urlData.images.push({
               src: absoluteSrc,
               alt: $(el).attr('alt') || '',
-              width: parseInt($(el).attr('width')) || null,
-              height: parseInt($(el).attr('height')) || null
+              width: $(el).attr('width') ? parseInt($(el).attr('width'), 10) : null,
+              height: $(el).attr('height') ? parseInt($(el).attr('height'), 10) : null
             });
           }
         });
