@@ -1,0 +1,14 @@
+{
+  "binary": {
+    "version": "6.0.0",
+    "skipMD5": true
+  },
+  "instance": {
+    "port": 27017,
+    "dbName": "echo5-rankscope"
+  },
+  "replSet": {
+    "count": 1,
+    "storageEngine": "wiredTiger"
+  }
+}

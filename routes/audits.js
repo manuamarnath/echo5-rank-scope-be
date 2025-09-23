@@ -5,21 +5,47 @@ const cheerio = require('cheerio');
 const { Parser } = require('json2csv');
 
 const SiteAudit = require('../models/SiteAudit');
+const Client = require('../models/Client');
 const auth = require('../middleware/auth');
 
-// GET all audits for user
+// GET all audits with filtering and pagination
 router.get('/', auth(['owner', 'employee']), async (req, res) => {
   try {
-    const { page = 1, limit = 20 } = req.query;
+    const { 
+      page = 1, 
+      limit = 20, 
+      clientId, 
+      status, 
+      search,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = req.query;
+    
     const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+    
+    // Build filter object
+    const filter = { userId: req.user._id };
+    if (clientId) filter.clientId = clientId;
+    if (status) filter.status = status;
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { baseUrl: { $regex: search, $options: 'i' } }
+      ];
+    }
 
-    const audits = await SiteAudit.find({ userId: req.user._id })
-      .sort({ createdAt: -1 })
+    // Build sort object
+    const sort = {};
+    sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
+
+    const audits = await SiteAudit.find(filter)
+      .sort(sort)
       .skip(skip)
       .limit(parseInt(limit, 10))
-      .populate('clientId', 'name');
+      .populate('clientId', 'name website')
+      .select('-crawledUrls -crawlLog'); // Exclude large fields for list view
 
-    const total = await SiteAudit.countDocuments({ userId: req.user._id });
+    const total = await SiteAudit.countDocuments(filter);
 
     res.json({
       data: audits,
@@ -36,11 +62,111 @@ router.get('/', auth(['owner', 'employee']), async (req, res) => {
   }
 });
 
+// GET audits dashboard stats
+router.get('/dashboard', auth(['owner', 'employee']), async (req, res) => {
+  try {
+    const { clientId } = req.query;
+    const filter = { userId: req.user._id };
+    if (clientId) filter.clientId = clientId;
+
+    const stats = await SiteAudit.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: null,
+          totalAudits: { $sum: 1 },
+          completedAudits: {
+            $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
+          },
+          runningAudits: {
+            $sum: { $cond: [{ $eq: ['$status', 'crawling'] }, 1, 0] }
+          },
+          failedAudits: {
+            $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] }
+          },
+          totalPagesCrawled: { $sum: '$summary.crawledPages' },
+          totalIssuesFound: {
+            $sum: {
+              $add: [
+                { $ifNull: ['$issues.missingTitles', 0] },
+                { $ifNull: ['$issues.missingDescriptions', 0] },
+                { $ifNull: ['$issues.brokenLinks', 0] },
+                { $ifNull: ['$issues.duplicateTitles', 0] }
+              ]
+            }
+          }
+        }
+      }
+    ]);
+
+    // Get recent audits
+    const recentAudits = await SiteAudit.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .populate('clientId', 'name website')
+      .select('name baseUrl status summary.crawledPages issues createdAt');
+
+    // Get client breakdown
+    const clientBreakdown = await SiteAudit.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: '$clientId',
+          auditCount: { $sum: 1 },
+          totalPages: { $sum: '$summary.crawledPages' },
+          totalIssues: {
+            $sum: {
+              $add: [
+                { $ifNull: ['$issues.missingTitles', 0] },
+                { $ifNull: ['$issues.missingDescriptions', 0] },
+                { $ifNull: ['$issues.brokenLinks', 0] }
+              ]
+            }
+          }
+        }
+      },
+      {
+        $lookup: {
+          from: 'clients',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'client'
+        }
+      },
+      { $unwind: '$client' },
+      {
+        $project: {
+          clientName: '$client.name',
+          auditCount: 1,
+          totalPages: 1,
+          totalIssues: 1
+        }
+      }
+    ]);
+
+    res.json({
+      stats: stats[0] || {
+        totalAudits: 0,
+        completedAudits: 0,
+        runningAudits: 0,
+        failedAudits: 0,
+        totalPagesCrawled: 0,
+        totalIssuesFound: 0
+      },
+      recentAudits,
+      clientBreakdown
+    });
+  } catch (error) {
+    console.error('Error fetching dashboard stats:', error);
+    res.status(500).json({ error: 'Failed to fetch dashboard stats' });
+  }
+});
+
 // GET single audit with detailed data
 router.get('/:id', auth(['owner', 'employee']), async (req, res) => {
   try {
     const audit = await SiteAudit.findById(req.params.id)
-      .populate('clientId', 'name')
+      .populate('clientId', 'name website')
       .populate('userId', 'name email');
 
     if (!audit) {
@@ -51,6 +177,127 @@ router.get('/:id', auth(['owner', 'employee']), async (req, res) => {
   } catch (error) {
     console.error('Error fetching audit:', error);
     res.status(500).json({ error: 'Failed to fetch audit' });
+  }
+});
+
+// GET audit pages with filtering and pagination
+router.get('/:id/pages', auth(['owner', 'employee']), async (req, res) => {
+  try {
+    const { 
+      page = 1, 
+      limit = 50,
+      statusCode,
+      issueType,
+      search,
+      sortBy = 'url',
+      sortOrder = 'asc'
+    } = req.query;
+
+    const audit = await SiteAudit.findById(req.params.id);
+    if (!audit) {
+      return res.status(404).json({ error: 'Audit not found' });
+    }
+
+    let pages = audit.crawledUrls;
+
+    // Apply filters
+    if (statusCode) {
+      const codes = Array.isArray(statusCode) ? statusCode : [statusCode];
+      pages = pages.filter(page => codes.includes(page.statusCode?.toString()));
+    }
+
+    if (search) {
+      const searchRegex = new RegExp(search, 'i');
+      pages = pages.filter(page => 
+        searchRegex.test(page.url) || 
+        searchRegex.test(page.title) || 
+        searchRegex.test(page.metaDescription)
+      );
+    }
+
+    if (issueType) {
+      switch (issueType) {
+        case 'missing-title':
+          pages = pages.filter(p => !p.title || p.title.trim() === '');
+          break;
+        case 'missing-description':
+          pages = pages.filter(p => !p.metaDescription || p.metaDescription.trim() === '');
+          break;
+        case 'missing-h1':
+          pages = pages.filter(p => !p.h1 || p.h1.length === 0);
+          break;
+        case 'multiple-h1':
+          pages = pages.filter(p => p.h1 && p.h1.length > 1);
+          break;
+        case 'broken-links':
+          pages = pages.filter(p => p.statusCode >= 400);
+          break;
+        case 'slow-pages':
+          pages = pages.filter(p => p.responseTime > 3000);
+          break;
+        case 'large-pages':
+          pages = pages.filter(p => p.contentLength > 5000000);
+          break;
+        case 'images-without-alt':
+          pages = pages.filter(p => p.images && p.images.some(img => !img.alt));
+          break;
+        case 'title-too-long':
+          pages = pages.filter(p => p.title && p.title.length > 60);
+          break;
+        case 'title-too-short':
+          pages = pages.filter(p => p.title && p.title.length < 30);
+          break;
+        case 'description-too-long':
+          pages = pages.filter(p => p.metaDescription && p.metaDescription.length > 160);
+          break;
+        case 'description-too-short':
+          pages = pages.filter(p => p.metaDescription && p.metaDescription.length < 120);
+          break;
+      }
+    }
+
+    // Sort pages
+    pages.sort((a, b) => {
+      let aVal = a[sortBy];
+      let bVal = b[sortBy];
+      
+      if (sortBy === 'url') {
+        aVal = a.url || '';
+        bVal = b.url || '';
+      } else if (sortBy === 'statusCode') {
+        aVal = a.statusCode || 0;
+        bVal = b.statusCode || 0;
+      } else if (sortBy === 'responseTime') {
+        aVal = a.responseTime || 0;
+        bVal = b.responseTime || 0;
+      } else if (sortBy === 'wordCount') {
+        aVal = a.wordCount || 0;
+        bVal = b.wordCount || 0;
+      }
+
+      if (sortOrder === 'desc') {
+        return bVal > aVal ? 1 : -1;
+      }
+      return aVal > bVal ? 1 : -1;
+    });
+
+    // Paginate
+    const total = pages.length;
+    const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+    const paginatedPages = pages.slice(skip, skip + parseInt(limit, 10));
+
+    res.json({
+      data: paginatedPages,
+      pagination: {
+        total,
+        page: parseInt(page, 10),
+        limit: parseInt(limit, 10),
+        pages: Math.ceil(total / parseInt(limit, 10))
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching audit pages:', error);
+    res.status(500).json({ error: 'Failed to fetch audit pages' });
   }
 });
 
@@ -76,9 +323,16 @@ router.post('/', auth(['owner', 'employee']), async (req, res) => {
       userId,
       crawlSettings: {
         maxPages: crawlSettings?.maxPages || 500,
+        maxDepth: crawlSettings?.maxDepth || 10,
         respectRobotsTxt: crawlSettings?.respectRobotsTxt !== false,
         includeSubdomains: crawlSettings?.includeSubdomains || false,
-        userAgent: crawlSettings?.userAgent || 'RankScopeBot/1.0'
+        followRedirects: crawlSettings?.followRedirects !== false,
+        crawlImages: crawlSettings?.crawlImages !== false,
+        crawlCSS: crawlSettings?.crawlCSS || false,
+        crawlJS: crawlSettings?.crawlJS || false,
+        userAgent: crawlSettings?.userAgent || 'RankScopeBot/1.0',
+        delay: crawlSettings?.delay || 1000,
+        timeout: crawlSettings?.timeout || 30000
       },
       status: 'pending',
       startTime: new Date()
@@ -115,8 +369,79 @@ router.delete('/:id', auth(['owner', 'employee']), async (req, res) => {
   }
 });
 
+// POST pause audit
+router.post('/:id/pause', auth(['owner', 'employee']), async (req, res) => {
+  try {
+    const audit = await SiteAudit.findById(req.params.id);
+    if (!audit) {
+      return res.status(404).json({ error: 'Audit not found' });
+    }
+
+    if (audit.status !== 'crawling') {
+      return res.status(400).json({ error: 'Audit is not currently running' });
+    }
+
+    audit.status = 'paused';
+    await audit.save();
+
+    res.json({ message: 'Audit paused successfully', audit });
+  } catch (error) {
+    console.error('Error pausing audit:', error);
+    res.status(500).json({ error: 'Failed to pause audit' });
+  }
+});
+
+// POST resume audit
+router.post('/:id/resume', auth(['owner', 'employee']), async (req, res) => {
+  try {
+    const audit = await SiteAudit.findById(req.params.id);
+    if (!audit) {
+      return res.status(404).json({ error: 'Audit not found' });
+    }
+
+    if (audit.status !== 'paused') {
+      return res.status(400).json({ error: 'Audit is not paused' });
+    }
+
+    audit.status = 'crawling';
+    await audit.save();
+
+    // Resume crawl process
+    startCrawl(audit._id);
+
+    res.json({ message: 'Audit resumed successfully', audit });
+  } catch (error) {
+    console.error('Error resuming audit:', error);
+    res.status(500).json({ error: 'Failed to resume audit' });
+  }
+});
+
+// POST stop audit
+router.post('/:id/stop', auth(['owner', 'employee']), async (req, res) => {
+  try {
+    const audit = await SiteAudit.findById(req.params.id);
+    if (!audit) {
+      return res.status(404).json({ error: 'Audit not found' });
+    }
+
+    if (!['crawling', 'paused'].includes(audit.status)) {
+      return res.status(400).json({ error: 'Audit is not currently running or paused' });
+    }
+
+    audit.status = 'completed';
+    audit.endTime = new Date();
+    audit.duration = audit.endTime.getTime() - audit.startTime.getTime();
+    await audit.save();
+
+    res.json({ message: 'Audit stopped successfully', audit });
+  } catch (error) {
+    console.error('Error stopping audit:', error);
+    res.status(500).json({ error: 'Failed to stop audit' });
+  }
+});
+
 // GET export audit as CSV
-router.get('/:id/export/csv', auth(['owner', 'employee']), async (req, res) => {
+router.get('/:id/export', auth(['owner', 'employee']), async (req, res) => {
   try {
     const audit = await SiteAudit.findById(req.params.id);
     
@@ -125,22 +450,29 @@ router.get('/:id/export/csv', auth(['owner', 'employee']), async (req, res) => {
     }
 
     const fields = [
-      'url',
-      'statusCode',
-      'title',
-      'metaDescription',
-      'wordCount',
-      'h1.length',
-      'internalLinks.length',
-      'externalLinks.length',
-      'images.length'
+      { label: 'URL', value: 'url' },
+      { label: 'Status Code', value: 'statusCode' },
+      { label: 'Title', value: 'title' },
+      { label: 'Title Length', value: 'titleLength' },
+      { label: 'Meta Description', value: 'metaDescription' },
+      { label: 'Meta Description Length', value: 'metaDescriptionLength' },
+      { label: 'H1 Count', value: 'h1.length' },
+      { label: 'Word Count', value: 'wordCount' },
+      { label: 'Internal Links', value: 'internalLinks.length' },
+      { label: 'External Links', value: 'externalLinks.length' },
+      { label: 'Images', value: 'images.length' },
+      { label: 'Response Time (ms)', value: 'responseTime' },
+      { label: 'Content Length', value: 'contentLength' },
+      { label: 'Canonical URL', value: 'canonicalUrl' },
+      { label: 'Meta Robots', value: 'robotsMeta' },
+      { label: 'Crawl Depth', value: 'crawlDepth' }
     ];
 
     const parser = new Parser({ fields });
     const csv = parser.parse(audit.crawledUrls);
 
     res.header('Content-Type', 'text/csv');
-    res.attachment(`audit-${audit.name}-${new Date().toISOString().split('T')[0]}.csv`);
+    res.attachment(`audit-${audit.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}-${new Date().toISOString().split('T')[0]}.csv`);
     res.send(csv);
   } catch (error) {
     console.error('Error exporting audit:', error);

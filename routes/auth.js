@@ -147,7 +147,11 @@ router.post('/register', registerValidation, async (req, res) => {
 // Get current user route (protected)
 router.get('/me', authMiddleware(), async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select('-password');
+    // Use MongoDB's _id field for lookup and ensure we have a valid ID
+    const userId = req.user.id || req.user._id;
+    console.log('Looking up user with ID:', userId);
+    
+    const user = await User.findById(userId).select('-passwordHash');
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
