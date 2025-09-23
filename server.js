@@ -20,6 +20,7 @@ const allowedOrigins = new Set([
   deployedFrontend,
   'http://localhost:3000',
   'http://127.0.0.1:3000',
+  'http://localhost:3001', // Frontend dev server alternate port
   'http://localhost:5173', // Vite default
   'http://127.0.0.1:5173'
 ]);
