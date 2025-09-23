@@ -174,6 +174,19 @@ router.put('/:id', auth(['owner']), async (req, res) => {
   }
 });
 
+// PUT /clients/demo/:id - update client without auth (development only)
+router.put('/demo/:id', async (req, res) => {
+  try {
+    console.log('Updating demo client:', req.params.id, 'with data:', req.body);
+    const client = await Client.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!client) return res.status(404).json({ error: 'Client not found' });
+    res.json(client);
+  } catch (err) {
+    console.error('Error updating demo client:', err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // DELETE /clients/:id - delete client (owner only)
 router.delete('/:id', auth(['owner']), async (req, res) => {
   try {
@@ -181,6 +194,19 @@ router.delete('/:id', auth(['owner']), async (req, res) => {
     if (!client) return res.status(404).json({ error: 'Client not found' });
     res.json({ message: 'Client deleted' });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /clients/demo/:id - delete client without auth (development only)
+router.delete('/demo/:id', async (req, res) => {
+  try {
+    console.log('Deleting demo client:', req.params.id);
+    const client = await Client.findByIdAndDelete(req.params.id);
+    if (!client) return res.status(404).json({ error: 'Client not found' });
+    res.json({ message: 'Client deleted' });
+  } catch (err) {
+    console.error('Error deleting demo client:', err);
     res.status(500).json({ error: err.message });
   }
 });
