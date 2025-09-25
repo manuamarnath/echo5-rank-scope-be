@@ -142,4 +142,130 @@ router.post('/generate', async (req, res) => {
   }
 });
 
+// Enhanced content generation with comprehensive prompt system
+router.post('/generate-comprehensive', async (req, res) => {
+  try {
+    const { 
+      clientId, 
+      pageData,
+      model = OPENAI_MODEL, 
+      temperature = 0.7, 
+      max_tokens = 4000,
+      useComprehensivePrompt = true 
+    } = req.body;
+    
+    if (useComprehensivePrompt && !clientId) {
+      return res.status(400).json({ error: 'Client ID is required for comprehensive prompt generation' });
+    }
+    
+    if (!pageData || !pageData.pageName || !pageData.service) {
+      return res.status(400).json({ error: 'Page data (pageName, service) is required' });
+    }
+
+    let prompt;
+    
+    if (useComprehensivePrompt && clientId) {
+      // Load client data from database
+      const Client = require('../models/Client');
+      const client = await Client.findById(clientId);
+      
+      if (!client) {
+        return res.status(404).json({ error: 'Client not found' });
+      }
+      
+      // Check if client has comprehensive content data
+      if (!client.contentData || !client.contentData.businessType) {
+        return res.status(400).json({ 
+          error: 'Client does not have comprehensive content data. Please complete client onboarding first.',
+          requiresOnboarding: true 
+        });
+      }
+      
+      // Transform client data to match the prompt utility format
+      const clientData = {
+        name: client.name,
+        website: client.website,
+        phone: client.phone,
+        address: client.address || {
+          full: client.locations?.[0] ? `${client.locations[0].city}, ${client.locations[0].state}` : '',
+          street: '',
+          city: client.locations?.[0]?.city || '',
+          state: client.locations?.[0]?.state || '',
+          zip: client.locations?.[0]?.zip || ''
+        },
+        services: client.services || [],
+        seedKeywords: client.seedKeywords?.map(k => ({ 
+          keyword: k.keyword, 
+          searchVolume: k.searchVolume, 
+          difficulty: k.difficulty 
+        })) || [],
+        contentData: client.contentData,
+        websiteStructure: client.websiteStructure || []
+      };
+      
+      // Import and use the comprehensive prompt system
+      // Note: In a real implementation, you'd import the Node.js version of these utilities
+      const { CONTENT_GENERATION_PROMPT } = require('../lib/prompts/contentGeneration');
+      const { preparePrompt } = require('../lib/promptUtils');
+      
+      try {
+        prompt = preparePrompt(clientData, pageData);
+      } catch (utilError) {
+        // Fallback to basic comprehensive prompt if utility fails
+        prompt = `Create comprehensive, SEO-optimized content for ${client.name}'s ${pageData.service} page.
+        
+Business: ${client.name}
+Website: ${client.website}
+Services: ${client.services.join(', ')}
+Target Keywords: ${client.seedKeywords?.map(k => k.keyword).join(', ')}
+Page: ${pageData.pageName} (${pageData.service})
+Business Type: ${client.contentData.businessType}
+Primary Service Area: ${client.contentData.primaryServiceArea}
+Target Audience: ${client.contentData.targetAudience}
+
+Create 800-1000 word content with:
+1. SEO-optimized meta title and description
+2. Proper heading structure (H1, H2, H3)
+3. Hero section with compelling CTA
+4. Why Choose Us section highlighting USPs
+5. About Us section
+6. FAQ section for voice search optimization
+7. Schema markup suggestions
+8. Local SEO elements
+9. Call-to-action sections
+
+Make it conversational, empathetic, and engaging while being plagiarism-free and optimized for search engines.`;
+      }
+    } else {
+      // Fallback to basic prompt
+      prompt = `Create comprehensive SEO content for ${pageData.pageName} focusing on ${pageData.service}. 
+      Include meta information, proper heading structure, FAQ section, and call-to-action elements.`;
+    }
+
+    const messages = [
+      { 
+        role: 'system', 
+        content: 'You are a senior content writer and SEO specialist. Create engaging, plagiarism-free content optimized for SEO, AEO (voice search), and local SEO. Follow the provided structure exactly and ensure all content is original and human-style.' 
+      },
+      { role: 'user', content: prompt }
+    ];
+
+    const content = await chatGPT(messages, { model, temperature, max_tokens });
+    
+    res.json({ 
+      content,
+      model,
+      timestamp: new Date().toISOString(),
+      comprehensivePrompt: useComprehensivePrompt,
+      clientId: clientId || null,
+      pageData
+    });
+  } catch (error) {
+    console.error('Comprehensive content generation error:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate comprehensive content: ' + error.message 
+    });
+  }
+});
+
 module.exports = router;

@@ -37,6 +37,49 @@ const integrationsSchema = new Schema({
   }
 }, { _id: false });
 
+// Enhanced address schema for comprehensive business information
+const addressSchema = new Schema({
+  full: String, // Complete address string
+  street: String, // Street address
+  city: String, // City
+  state: String, // State abbreviation
+  zip: String, // ZIP code
+  country: {
+    type: String,
+    default: 'US'
+  }
+}, { _id: false });
+
+// Schema for business shortcodes used in CMS
+const shortcodesSchema = new Schema({
+  contactForm: String, // Contact form shortcode
+  reviews: String, // Reviews shortcode
+  partners: String // Partner logos shortcode
+}, { _id: false });
+
+// Schema for comprehensive content generation data
+const contentDataSchema = new Schema({
+  businessType: String, // e.g., "family-owned cabinets and countertops store"
+  locationDescription: String, // e.g., "suburb 20 minutes from downtown Tampa"
+  serviceAreas: [String], // Cities/areas served
+  primaryServiceArea: String, // Main city served
+  usps: [String], // Unique selling points (up to 5)
+  targetAudience: String, // Description of target customers
+  tone: {
+    type: String,
+    enum: ['professional', 'casual', 'technical', 'conversational'],
+    default: 'professional'
+  },
+  seoGoals: String, // SEO objectives and strategy
+  primaryGeoKeyword: String, // Main geographic keyword
+  driveTimesDescription: String, // Description of drive times from key areas
+  googleMapsEmbedURL: String, // Google Maps embed URL
+  socialLinks: [String], // Social media profile URLs
+  shortcodes: shortcodesSchema,
+  businessHours: String, // Operating hours in schema format
+  businessDescription: String // Short business description for schema
+}, { _id: false });
+
 const clientSchema = new Schema({
   name: {
     type: String,
@@ -44,7 +87,9 @@ const clientSchema = new Schema({
   },
   industry: String,
   website: String, // Client's website domain
-  locations: [locationSchema],
+  phone: String, // Business phone number
+  address: addressSchema, // Enhanced address information
+  locations: [locationSchema], // Keep existing location schema for backwards compatibility
   services: [String],
   competitors: [String], // Array of URLs
   primaryKeywords: [{
@@ -74,6 +119,10 @@ const clientSchema = new Schema({
       enum: ['csv', 'gsc', 'manual']
     }
   }],
+  // Enhanced content generation data
+  contentData: contentDataSchema,
+  // Website structure for content generation
+  websiteStructure: [String], // List of website pages/sections
   integrations: integrationsSchema
 }, {
   timestamps: true
