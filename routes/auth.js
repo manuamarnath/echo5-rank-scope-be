@@ -35,10 +35,13 @@ router.post('/login', loginValidation, async (req, res) => {
     if (!user) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
-    // Validate password
+    // Validate password (handle legacy users without passwordHash)
+    if (!user.passwordHash || typeof user.passwordHash !== 'string') {
+      return res.status(400).json({ error: 'Invalid credentials' });
+    }
     const isMatch = await bcrypt.compare(password, user.passwordHash);
     if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid credentials' });
+      return res.status(400).json({ error: 'Invalid credentials' });
     }
 
     // Create JWT payload
@@ -49,16 +52,13 @@ router.post('/login', loginValidation, async (req, res) => {
       role: user.role
     };
     
-    // Sign token
-    jwt.sign(
+    // Sign token (sync) to avoid async throw issues
+    const token = jwt.sign(
       payload,
       process.env.JWT_SECRET || 'your_jwt_secret',
-      { expiresIn: '1h' },
-      (err, token) => {
-        if (err) throw err;
-        res.json({ token, user: payload });
-      }
+      { expiresIn: '1h' }
     );
+    return res.json({ token, user: payload });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -128,16 +128,13 @@ router.post('/register', registerValidation, async (req, res) => {
       role: user.role
     };
     
-    // Sign token
-    jwt.sign(
+    // Sign token (sync)
+    const token = jwt.sign(
       payload,
       process.env.JWT_SECRET || 'your_jwt_secret',
-      { expiresIn: '1h' },
-      (err, token) => {
-        if (err) throw err;
-        res.json({ token, user: payload });
-      }
+      { expiresIn: '1h' }
     );
+    return res.json({ token, user: payload });
   } catch (err) {
     console.error('Registration error:', err);
     res.status(500).json({ error: 'Server error' });
