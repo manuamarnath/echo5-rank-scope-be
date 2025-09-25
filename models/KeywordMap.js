@@ -10,6 +10,8 @@ const KeywordMapSchema = new mongoose.Schema({
   source: { type: String, default: 'suggestion' },
   suggestedByJobId: { type: String, default: null, index: true },
   status: { type: String, enum: ['pending','accepted','dismissed'], default: 'pending' },
+  role: { type: String, enum: ['primary','supporting','localized', null], default: null },
+  acceptedBy: { type: String, enum: ['ai','user', null], default: null },
   notes: { type: String, default: null },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
 }, { timestamps: true });

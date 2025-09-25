@@ -61,7 +61,8 @@ router.post('/plan-from-keywords', auth(['owner','employee']), async (req, res) 
     for (const k of kws) {
       const title = buildTitle(k.text);
       if (existingSet.has(title)) continue;
-      toCreate.push({ clientId, title, keywords: [k.text], status: 'idea' });
+      const suggestedSlug = title.toLowerCase().replace(/[^a-z0-9\s-]/g,'').replace(/\s+/g,'-');
+      toCreate.push({ clientId, title, keywords: [k.text], status: 'idea', primaryKeywordId: k._id, suggestedSlug, targetPageId: k.pageId || null });
     }
 
     if (toCreate.length === 0) {

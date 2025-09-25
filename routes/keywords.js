@@ -545,6 +545,55 @@ router.post('/bulk-import-primary', async (req, res) => {
   }
 });
 
+// POST normalize: ensure each primary keyword has a Page and mapping
+router.post('/normalize', async (req, res) => {
+  try {
+    const { clientId } = req.body;
+    if (!clientId) return res.status(400).json({ error: 'clientId required' });
+
+    const primaries = await Keyword.find({ clientId, role: 'primary' }).lean();
+    const Page = require('../models/Page');
+    let createdPages = 0;
+    let updatedMappings = 0;
+
+    for (const k of primaries) {
+      // If keyword has a page, ensure page has primaryKeywordId set
+      if (k.pageId) {
+        const page = await Page.findById(k.pageId);
+        if (page && String(page.primaryKeywordId || '') !== String(k._id)) {
+          page.primaryKeywordId = k._id;
+          await page.save();
+          updatedMappings++;
+        }
+        continue;
+      }
+
+      // No page yet: infer type from allocatedTo or default to 'service'
+      const type = k.allocatedTo === 'homepage' ? 'homepage' : (k.allocatedTo === 'blog' ? 'blog' : 'service');
+      const slugBase = (k.text || '').trim().toLowerCase().replace(/[^a-z0-9\s-]/g,'').replace(/\s+/g,'-');
+      const slug = `${type === 'homepage' ? '' : slugBase || 'service'}` || 'home';
+
+      // Ensure unique slug per client
+      let uniqueSlug = slug || 'service';
+      let n = 1;
+      // eslint-disable-next-line no-await-in-loop
+      while (await Page.findOne({ clientId, slug: uniqueSlug })) {
+        uniqueSlug = `${slug}-${n++}`;
+      }
+
+      const page = new Page({ clientId, type, title: k.text, slug: uniqueSlug, primaryKeywordId: k._id, status: 'draft' });
+      await page.save();
+      await Keyword.updateOne({ _id: k._id }, { $set: { pageId: page._id } });
+      createdPages++;
+    }
+
+    res.json({ message: 'Normalization complete', createdPages, updatedMappings, totalPrimaries: primaries.length });
+  } catch (err) {
+    console.error('Error during normalization:', err);
+    res.status(500).json({ error: 'Failed to normalize keyword mapping' });
+  }
+});
+
 // GET primary keywords for a client
 router.get('/primary', async (req, res) => {
   try {
