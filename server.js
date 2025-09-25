@@ -118,6 +118,11 @@ app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
+// Simple ping endpoint for uptime monitoring (lightweight)
+app.get('/ping', (req, res) => {
+  res.json({ status: 'OK', message: 'Server is alive' });
+});
+
 // Additional health endpoint for API route that frontend expects
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
