@@ -12,4 +12,7 @@ const BlogIdeaSchema = new mongoose.Schema({
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
 }, { timestamps: true });
 
+// Helpful index for dedupe checks
+BlogIdeaSchema.index({ clientId: 1, title: 1 });
+
 module.exports = mongoose.model('BlogIdea', BlogIdeaSchema);

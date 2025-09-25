@@ -95,11 +95,13 @@ app.use('/api/clients', require('./routes/clients'));
 app.use('/api/keywords', require('./routes/keywords'));
 app.use('/api/keyword-map', require('./routes/keywordMap'));
 app.use('/api/blog-ideas', require('./routes/blogIdeas'));
+app.use('/api/heatmap', require('./routes/heatmap'));
 app.use('/api/pages', require('./routes/pages'));
 app.use('/api/briefs', require('./routes/briefs'));
 app.use('/api/tasks', require('./routes/tasks'));
 app.use('/api/report', require('./routes/report'));
 app.use('/api/test', require('./routes/test'));
+app.use('/api/analysis', require('./routes/websiteAnalysis'));
 
 // Legacy route support (without /api prefix) - can be removed once frontend is updated
 // Legacy route support (without /api prefix) - can be removed once frontend is updated
@@ -112,6 +114,7 @@ app.use('/briefs', require('./routes/briefs'));
 app.use('/tasks', require('./routes/tasks'));
 app.use('/report', require('./routes/report'));
 app.use('/content', require('./routes/content'));
+app.use('/heatmap', require('./routes/heatmap'));
 
 // Health check endpoints
 app.get('/health', (req, res) => {

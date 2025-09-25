@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const Keyword = require('../models/Keyword');
+const Page = require('../models/Page');
+const KeywordMap = require('../models/KeywordMap');
 const axios = require('axios');
 const NodeCache = require('node-cache');
 
@@ -59,6 +61,73 @@ router.get('/', async (req, res) => {
   } catch (error) {
     console.error('Error fetching keywords:', error);
     res.status(500).json({ error: 'Failed to fetch keywords' });
+  }
+});
+
+// GET aggregated Keyword Map for a client: pages with keywords by role, unmapped keywords, and suggestions
+router.get('/map', async (req, res) => {
+  try {
+    const { clientId, limit = 200 } = req.query;
+
+    if (!clientId) {
+      return res.status(400).json({ error: 'clientId is required' });
+    }
+
+    // Fetch pages for the client
+    const pages = await Page.find({ clientId }).sort({ createdAt: -1 }).lean();
+    const pageIds = pages.map(p => p._id);
+
+    // Fetch keywords for those pages in one query
+    const keywordsByPage = await Keyword.find({ clientId, pageId: { $in: pageIds } })
+      .select('text role pageId intent geo currentRank bestRank')
+      .lean();
+
+    const pageMap = new Map();
+    pages.forEach(p => {
+      pageMap.set(String(p._id), {
+        pageId: p._id,
+        title: p.title,
+        slug: p.slug,
+        type: p.type,
+        status: p.status,
+        primaryKeyword: null,
+        secondaryKeywords: [],
+        supportingKeywords: []
+      });
+    });
+
+    for (const k of keywordsByPage) {
+      const bucket = pageMap.get(String(k.pageId));
+      if (!bucket) continue;
+      if (k.role === 'primary' && !bucket.primaryKeyword) {
+        bucket.primaryKeyword = k;
+      } else if (k.role === 'secondary') {
+        bucket.secondaryKeywords.push(k);
+      } else if (k.role === 'supporting') {
+        bucket.supportingKeywords.push(k);
+      }
+    }
+
+    // Unmapped keywords (no pageId)
+    const unmapped = await Keyword.find({ clientId, $or: [ { pageId: null }, { pageId: { $exists: false } } ] })
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .lean();
+
+    // Suggestions from KeywordMap
+    const suggestions = await KeywordMap.find({ clientId, status: 'pending' })
+      .sort({ score: -1, createdAt: -1 })
+      .limit(parseInt(limit))
+      .lean();
+
+    res.json({
+      pages: Array.from(pageMap.values()),
+      unmapped,
+      suggestions
+    });
+  } catch (error) {
+    console.error('Error building keyword map:', error);
+    res.status(500).json({ error: 'Failed to build keyword map' });
   }
 });
 
@@ -192,23 +261,85 @@ router.put('/:id/allocate', async (req, res) => {
     const { id } = req.params;
     const { allocatedTo, serviceMatch, pageId, role } = req.body;
 
-    const keyword = await Keyword.findByIdAndUpdate(
-      id,
-      {
-        allocatedTo: allocatedTo || null,
-        serviceMatch: serviceMatch || null,
-        pageId: pageId || null,
-        role: role || null
-      },
-      { new: true }
-    ).populate('pageId', 'title url');
-
+    const keyword = await Keyword.findById(id);
     if (!keyword) {
       return res.status(404).json({ error: 'Keyword not found' });
     }
 
-    res.json(keyword);
+    // Track previous state for page adjustments
+    const prevPageId = keyword.pageId ? String(keyword.pageId) : null;
+    const prevRole = keyword.role || null;
 
+    // Update keyword core fields first (in memory)
+    keyword.allocatedTo = allocatedTo || null;
+    keyword.serviceMatch = serviceMatch || null;
+    keyword.pageId = pageId || null;
+    keyword.role = role || null;
+
+    // Persist keyword changes
+    await keyword.save();
+
+    // Page adjustments
+    if (pageId) {
+      const page = await Page.findById(pageId);
+      if (!page) {
+        return res.status(404).json({ error: 'Target page not found' });
+      }
+
+      if (role === 'primary') {
+        // Demote any other primary keywords on this page to secondary
+        await Keyword.updateMany(
+          { clientId: keyword.clientId, pageId, role: 'primary', _id: { $ne: keyword._id } },
+          { $set: { role: 'secondary', isPrimary: false } }
+        );
+
+        // Update page's primary reference
+        page.primaryKeywordId = keyword._id;
+        // Ensure secondaryKeywordIds does not contain the primary id
+        page.secondaryKeywordIds = (page.secondaryKeywordIds || []).filter(kid => String(kid) !== String(keyword._id));
+        await page.save();
+
+        // Mark this keyword as primary flag
+        if (!keyword.isPrimary) {
+          keyword.isPrimary = true;
+          await keyword.save();
+        }
+      } else if (role === 'secondary' || role === 'supporting') {
+        // Ensure keyword appears in page.secondaryKeywordIds
+        await Page.updateOne(
+          { _id: pageId },
+          { $addToSet: { secondaryKeywordIds: keyword._id } }
+        );
+
+        // If this keyword was previously the page primary and got demoted, clear page.primaryKeywordId
+        if (String(page.primaryKeywordId || '') === String(keyword._id)) {
+          await Page.updateOne({ _id: pageId }, { $set: { primaryKeywordId: null } });
+        }
+
+        // Ensure isPrimary flag off
+        if (keyword.isPrimary) {
+          keyword.isPrimary = false;
+          await keyword.save();
+        }
+      }
+    }
+
+    // If page changed or role changed, clean up old page's references (remove from secondaryKeywordIds or primary)
+    if (prevPageId && (!pageId || prevPageId !== String(pageId))) {
+      const prevPage = await Page.findById(prevPageId);
+      if (prevPage) {
+        // Remove from secondaryKeywordIds
+        prevPage.secondaryKeywordIds = (prevPage.secondaryKeywordIds || []).filter(kid => String(kid) !== String(keyword._id));
+        // If it was primary on that page, clear primaryKeywordId
+        if (String(prevPage.primaryKeywordId || '') === String(keyword._id)) {
+          prevPage.primaryKeywordId = null;
+        }
+        await prevPage.save();
+      }
+    }
+
+    const populated = await Keyword.findById(keyword._id).populate('pageId', 'title url');
+    res.json(populated);
   } catch (error) {
     console.error('Error updating keyword allocation:', error);
     res.status(500).json({ error: 'Failed to update keyword allocation' });

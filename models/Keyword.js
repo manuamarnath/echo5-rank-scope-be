@@ -89,5 +89,8 @@ const keywordSchema = new Schema({
 // Ensure only one primary role per page (application-level enforcement + index for quick lookup)
 // Note: MongoDB partialFilterExpression requires creating the index at the DB level; we define it here for clarity.
 keywordSchema.index({ pageId: 1, role: 1 }, { partialFilterExpression: { role: 'primary' } });
+// Helpful lookups
+keywordSchema.index({ clientId: 1, text: 1 });
+keywordSchema.index({ clientId: 1, pageId: 1, role: 1 });
 
 module.exports = mongoose.model('Keyword', keywordSchema);

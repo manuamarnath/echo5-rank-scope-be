@@ -148,6 +148,7 @@ router.post('/generate-comprehensive', async (req, res) => {
     const { 
       clientId, 
       pageData,
+      selectedKeywords = [], // New: Array of selected keywords for this content
       model = OPENAI_MODEL, 
       temperature = 0.7, 
       max_tokens = 4000,
@@ -160,6 +161,11 @@ router.post('/generate-comprehensive', async (req, res) => {
     
     if (!pageData || !pageData.pageName || !pageData.service) {
       return res.status(400).json({ error: 'Page data (pageName, service) is required' });
+    }
+    
+    // Validate selected keywords
+    if (selectedKeywords && !Array.isArray(selectedKeywords)) {
+      return res.status(400).json({ error: 'Selected keywords must be an array' });
     }
 
     let prompt;
@@ -209,15 +215,27 @@ router.post('/generate-comprehensive', async (req, res) => {
       const { preparePrompt } = require('../lib/promptUtils');
       
       try {
-        prompt = preparePrompt(clientData, pageData);
+        // Enhanced page data with selected keywords
+        const enhancedPageData = {
+          ...pageData,
+          selectedKeywords: selectedKeywords,
+          assignedKeywords: selectedKeywords.map(k => k.keyword || k).join(', ')
+        };
+        
+        prompt = preparePrompt(clientData, enhancedPageData);
       } catch (utilError) {
         // Fallback to basic comprehensive prompt if utility fails
+        const keywordsToUse = selectedKeywords.length > 0 
+          ? selectedKeywords.map(k => k.keyword || k).join(', ')
+          : client.seedKeywords?.map(k => k.keyword).join(', ');
+          
         prompt = `Create comprehensive, SEO-optimized content for ${client.name}'s ${pageData.service} page.
         
 Business: ${client.name}
 Website: ${client.website}
 Services: ${client.services.join(', ')}
-Target Keywords: ${client.seedKeywords?.map(k => k.keyword).join(', ')}
+Selected Keywords for This Page: ${keywordsToUse}
+All Available Keywords: ${client.seedKeywords?.map(k => k.keyword).join(', ')}
 Page: ${pageData.pageName} (${pageData.service})
 Business Type: ${client.contentData.businessType}
 Primary Service Area: ${client.contentData.primaryServiceArea}
@@ -258,7 +276,8 @@ Make it conversational, empathetic, and engaging while being plagiarism-free and
       timestamp: new Date().toISOString(),
       comprehensivePrompt: useComprehensivePrompt,
       clientId: clientId || null,
-      pageData
+      pageData,
+      selectedKeywords: selectedKeywords
     });
   } catch (error) {
     console.error('Comprehensive content generation error:', error);
