@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const axios = require('axios');
 const Client = require('../models/Client');
 const Keyword = require('../models/Keyword');
 const auth = require('../middleware/auth');
@@ -20,6 +21,89 @@ router.get('/', auth(['owner', 'employee']), async (req, res) => {
     res.json(clients);
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+// GET /clients/pagespeed - batch PageSpeed Insights for accessible clients
+// Query: strategy (mobile|desktop, default mobile), category (default performance), clientId (optional filter), limit (optional)
+router.get('/pagespeed', auth(['owner', 'employee', 'client']), async (req, res) => {
+  try {
+    const { strategy = 'mobile', category = 'performance', clientId, limit } = req.query;
+
+    // Visibility filter
+    const filter = {};
+    if (req.user.role === 'client') {
+      filter._id = req.user.clientId;
+    }
+    if (clientId) {
+      filter._id = clientId;
+    }
+
+    const max = limit ? Math.max(1, parseInt(limit, 10)) : undefined;
+    const clients = await Client.find(filter).select('name website').limit(max || 0);
+
+    const normalizeUrl = (site) => {
+      if (!site) return null;
+      let u = site.trim();
+      if (!/^https?:\/\//i.test(u)) u = `https://${u}`;
+      try {
+        const parsed = new URL(u);
+        return parsed.origin;
+      } catch (e) {
+        return null;
+      }
+    };
+
+    const API = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed';
+    const results = [];
+
+    for (const c of clients) {
+      const site = normalizeUrl(c.website);
+      if (!site) {
+        results.push({ clientId: c._id, clientName: c.name, website: c.website || '', error: 'Invalid or missing website URL' });
+        continue;
+      }
+
+      const params = new URLSearchParams({
+        url: site,
+        strategy: Array.isArray(strategy) ? strategy[0] : String(strategy),
+        category: Array.isArray(category) ? category[0] : String(category),
+      });
+      if (process.env.PSI_API_KEY) params.append('key', process.env.PSI_API_KEY);
+
+      try {
+        const target = `${API}?${params.toString()}`;
+        const resp = await axios.get(target, { timeout: 30000 });
+        const data = resp.data || {};
+        const lh = data.lighthouseResult || {};
+        const audits = lh.audits || {};
+        const metrics = {
+          url: data.id || site,
+          strategy: Array.isArray(strategy) ? strategy[0] : String(strategy),
+          performanceScore: Math.round(((lh.categories?.performance?.score || 0) * 100)),
+          firstContentfulPaint: audits['first-contentful-paint']?.numericValue || null,
+          largestContentfulPaint: audits['largest-contentful-paint']?.numericValue || null,
+          cumulativeLayoutShift: audits['cumulative-layout-shift']?.numericValue || null,
+          totalBlockingTime: audits['total-blocking-time']?.numericValue || null,
+          speedIndex: audits['speed-index']?.numericValue || null,
+          timeToInteractive: audits['interactive']?.numericValue || null,
+          fetchedAt: lh.fetchTime || new Date().toISOString(),
+        };
+        results.push({ clientId: c._id, clientName: c.name, website: site, metrics });
+      } catch (err) {
+        const status = err.response?.status;
+        const message = err.response?.data?.error?.message || err.message || 'PSI request failed';
+        results.push({ clientId: c._id, clientName: c.name, website: site, error: { status, message } });
+      }
+
+      // courtesy delay
+      await new Promise(r => setTimeout(r, 300));
+    }
+
+    res.json({ count: results.length, results });
+  } catch (error) {
+    console.error('Batch PageSpeed error:', error);
+    res.status(500).json({ error: 'Failed to fetch PageSpeed metrics for clients' });
   }
 });
 

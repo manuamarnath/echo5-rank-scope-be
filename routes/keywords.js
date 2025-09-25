@@ -565,6 +565,12 @@ router.post('/normalize', async (req, res) => {
           await page.save();
           updatedMappings++;
         }
+        // Ensure a KeywordMap mapping row exists for traceability
+        const KeywordMap = require('../models/KeywordMap');
+        const existingMap = await KeywordMap.findOne({ clientId, pageId: page ? page._id : null, text: k.text });
+        if (!existingMap) {
+          await KeywordMap.create({ clientId, pageId: page ? page._id : null, text: k.text, intent: k.intent || 'transactional', status: 'accepted', role: 'primary', acceptedBy: 'ai', source: 'mapping' });
+        }
         continue;
       }
 
@@ -584,6 +590,9 @@ router.post('/normalize', async (req, res) => {
       const page = new Page({ clientId, type, title: k.text, slug: uniqueSlug, primaryKeywordId: k._id, status: 'draft' });
       await page.save();
       await Keyword.updateOne({ _id: k._id }, { $set: { pageId: page._id } });
+      // Record mapping in KeywordMap
+      const KeywordMap = require('../models/KeywordMap');
+      await KeywordMap.create({ clientId, pageId: page._id, text: k.text, intent: k.intent || 'transactional', status: 'accepted', role: 'primary', acceptedBy: 'ai', source: 'mapping' });
       createdPages++;
     }
 

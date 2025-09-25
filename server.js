@@ -102,6 +102,7 @@ app.use('/api/tasks', require('./routes/tasks'));
 app.use('/api/report', require('./routes/report'));
 app.use('/api/test', require('./routes/test'));
 app.use('/api/analysis', require('./routes/websiteAnalysis'));
+app.use('/api/pagespeed-local', require('./routes/pagespeedLocal'));
 
 // Legacy route support (without /api prefix) - can be removed once frontend is updated
 // Legacy route support (without /api prefix) - can be removed once frontend is updated

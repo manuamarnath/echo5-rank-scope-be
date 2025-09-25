@@ -511,6 +511,62 @@ router.get('/:id/summary', auth(['owner', 'employee']), async (req, res) => {
   }
 });
 
+// GET PageSpeed Insights for a given URL
+router.get('/:id/pagespeed', auth(['owner', 'employee']), async (req, res) => {
+  try {
+    const { url, strategy = 'mobile', category = 'performance' } = req.query;
+    if (!url) {
+      return res.status(400).json({ error: 'Missing required query parameter: url' });
+    }
+
+    // Optional: verify audit exists and belongs to user
+    const audit = await SiteAudit.findById(req.params.id);
+    if (!audit) {
+      return res.status(404).json({ error: 'Audit not found' });
+    }
+    if (audit.userId?.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const API = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed';
+    const params = new URLSearchParams({
+      url: url,
+      strategy: strategy,
+      category: Array.isArray(category) ? category[0] : category,
+    });
+    if (process.env.PSI_API_KEY) {
+      params.append('key', process.env.PSI_API_KEY);
+    }
+
+    const target = `${API}?${params.toString()}`;
+    const resp = await axios.get(target, { timeout: 30000 });
+    const data = resp.data || {};
+
+    const lh = data.lighthouseResult || {};
+    const audits = lh.audits || {};
+
+    const metrics = {
+      url: data.id || url,
+      strategy,
+      performanceScore: Math.round(((lh.categories?.performance?.score || 0) * 100)),
+      firstContentfulPaint: audits['first-contentful-paint']?.numericValue || null,
+      largestContentfulPaint: audits['largest-contentful-paint']?.numericValue || null,
+      cumulativeLayoutShift: audits['cumulative-layout-shift']?.numericValue || null,
+      totalBlockingTime: audits['total-blocking-time']?.numericValue || null,
+      speedIndex: audits['speed-index']?.numericValue || null,
+      timeToInteractive: audits['interactive']?.numericValue || null,
+      fetchedAt: lh.fetchTime || new Date().toISOString(),
+    };
+
+    res.json({ metrics, raw: process.env.NODE_ENV === 'production' ? undefined : data });
+  } catch (error) {
+    console.error('Error fetching PageSpeed Insights:', error.message || error);
+    const status = error.response?.status || 500;
+    const msg = error.response?.data || { error: 'Failed to fetch PageSpeed Insights' };
+    res.status(status).json(msg);
+  }
+});
+
 // Helper function to crawl website
 async function startCrawl(auditId) {
   try {

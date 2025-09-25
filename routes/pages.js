@@ -44,13 +44,14 @@ router.post('/', async (req, res) => {
 // UPDATE a page
 router.put('/:id', async (req, res) => {
   try {
+    const allowed = ['title','slug','type','status','rankEnrollment','primaryKeywordId','secondaryKeywordIds'];
+    const update = {};
+    for (const key of allowed) {
+      if (Object.prototype.hasOwnProperty.call(req.body, key)) update[key] = req.body[key];
+    }
     const updatedPage = await Page.findByIdAndUpdate(
       req.params.id,
-      {
-        title: req.body.title,
-        content: req.body.content,
-        // Add other fields
-      },
+      update,
       { new: true }
     );
     if (!updatedPage) {

@@ -33,6 +33,11 @@ const pageSchema = new Schema({
     enum: ['draft', 'published'],
     default: 'draft',
     required: true
+  },
+  rankEnrollment: {
+    type: String,
+    enum: ['primary', 'primary+supporting3'],
+    default: 'primary'
   }
 }, {
   timestamps: true
