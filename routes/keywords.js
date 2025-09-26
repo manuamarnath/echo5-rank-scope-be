@@ -779,84 +779,18 @@ router.post('/check-rank', async (req, res) => {
 
 const rankingService = require('../services/rankingService');
 
-// Helper function to check keyword rank using SerpApi (preferred) or Scrapingdog as fallback
+// Helper function to check keyword rank using rankingService (ScrapingDog preferred, SerpApi fallback)
 async function checkKeywordRank(keyword, domain, searchEngine, device, location, gl = null, hl = null) {
-  // Prefer SerpApi via rankingService.getSERPRanking when available
-  try {
-  const serpRes = await rankingService.getSERPRanking(keyword, domain, { num: 100, location: location || undefined, device, gl, hl });
-    if (serpRes && typeof serpRes.position !== 'undefined') {
-      return {
-        position: serpRes.position,
-        url: serpRes.url || null,
-        snippet: serpRes.snippet || '',
-        timestamp: new Date(),
-        searchEngine,
-        device,
-        location
-      };
-    }
-  } catch (err) {
-    console.warn('SerpApi rank check failed, falling back to Scrapingdog:', err && err.message ? err.message : err);
-  }
-
-  // Fallback to Scrapingdog if SerpApi didn't return a result or is not configured
-  try {
-    const apiKey = process.env.SCRAPINGDOG_API_KEY;
-    if (!apiKey) {
-      throw new Error('SCRAPINGDOG_API_KEY environment variable is not set');
-    }
-
-    const payload = {
-      api_key: apiKey,
-      query: keyword,
-      country: location ? location.split(',')[0].trim().toLowerCase() : 'us',
-      gl: location ? location.split(',')[0].trim().toLowerCase() : 'us',
-      hl: 'en',
-      num: 100
-    };
-    if (device === 'mobile') payload.device = 'mobile';
-
-    const response = await axios.post('https://api.scrapingdog.com/google', payload, { headers: { 'Content-Type': 'application/json' } });
-    const organicResults = response.data.organic_results || [];
-
-    let position = null;
-    let url = null;
-    let snippet = '';
-    for (let i = 0; i < organicResults.length; i++) {
-      if (organicResults[i].link && organicResults[i].link.includes(domain)) {
-        position = i + 1;
-        url = organicResults[i].link;
-        snippet = organicResults[i].snippet || '';
-        break;
-      }
-    }
-    if (!position) {
-      position = organicResults.length + 1;
-      snippet = 'Not found in top 100 results';
-    }
-
-    return {
-      position,
-      url,
-      snippet,
-      timestamp: new Date(),
-      searchEngine,
-      device,
-      location
-    };
-  } catch (error) {
-    console.error('Error checking keyword rank with Scrapingdog fallback:', error && error.message ? error.message : error);
-    return {
-      position: null,
-      url: null,
-      snippet: '',
-      timestamp: new Date(),
-      searchEngine,
-      device,
-      location,
-      error: error && error.message ? error.message : String(error)
-    };
-  }
+  const res = await rankingService.getSERPRanking(keyword, domain, { num: 100, location: location || undefined, device, gl, hl });
+  return {
+    position: res && typeof res.position !== 'undefined' ? res.position : null,
+    url: res && res.url ? res.url : null,
+    snippet: (res && (res.snippet || res.description)) || '',
+    timestamp: new Date(),
+    searchEngine,
+    device,
+    location
+  };
 }
 
   // GET rank history for a keyword
