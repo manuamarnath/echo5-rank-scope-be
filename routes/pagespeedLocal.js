@@ -3,6 +3,7 @@ const router = express.Router();
 // Lighthouse v12 is ESM; use the CommonJS bridge entry to get a callable function
 const lighthouse = require('lighthouse/core/index.cjs');
 const chromeLauncher = require('chrome-launcher');
+const axios = require('axios');
 const auth = require('../middleware/auth');
 const Client = require('../models/Client');
 
@@ -30,9 +31,41 @@ router.get('/lighthouse', auth(['owner', 'employee', 'client']), async (req, res
 
   let chrome;
   try {
-    chrome = await chromeLauncher.launch({ chromeFlags: ['--headless', '--no-sandbox', '--disable-gpu'] });
+    const chromePath = process.env.CHROME_PATH || process.env.GOOGLE_CHROME_BIN;
+    const chromeFlags = [
+      '--headless=new',
+      '--no-sandbox',
+      '--disable-gpu',
+      '--disable-dev-shm-usage',
+      '--no-zygote'
+    ];
+    chrome = await chromeLauncher.launch({ chromeFlags, chromePath });
   } catch (e) {
-    return res.status(500).json({ error: 'Failed to launch Chrome. Ensure Chrome/Chromium is installed.' });
+    // Fallback to Google PSI if local Chrome is not available
+    try {
+      const strat = String(strategy).toLowerCase() === 'desktop' ? 'desktop' : 'mobile';
+      const api = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed';
+      const params = { url: targetUrl, strategy: strat, category: 'performance' };
+      if (process.env.PSI_API_KEY) params.key = process.env.PSI_API_KEY;
+      const { data } = await axios.get(api, { params, timeout: 20000 });
+      const lh = data.lighthouseResult || {};
+      const audits = lh.audits || {};
+      const metrics = {
+        url: lh.finalDisplayedUrl || targetUrl,
+        strategy: strat,
+        performanceScore: Math.round(((lh.categories?.performance?.score || 0) * 100)),
+        firstContentfulPaint: audits['first-contentful-paint']?.numericValue || null,
+        largestContentfulPaint: audits['largest-contentful-paint']?.numericValue || null,
+        cumulativeLayoutShift: audits['cumulative-layout-shift']?.numericValue || null,
+        totalBlockingTime: audits['total-blocking-time']?.numericValue || null,
+        speedIndex: audits['speed-index']?.numericValue || null,
+        timeToInteractive: audits['interactive']?.numericValue || null,
+        fetchedAt: lh.fetchTime || new Date().toISOString(),
+      };
+      return res.json({ metrics, provider: 'psi' });
+    } catch (psiErr) {
+      return res.status(500).json({ error: 'Failed to launch Chrome. Ensure Chrome/Chromium is installed.', message: psiErr?.message });
+    }
   }
 
   try {
@@ -104,12 +137,20 @@ router.get('/batch', auth(['owner', 'employee', 'client']), async (req, res) => 
       try { return new URL(u).origin; } catch { return null; }
     };
 
-    const results = [];
+  const results = [];
 
     const runLighthouseOnce = async (targetUrl, strat) => {
       let chrome;
       try {
-        chrome = await chromeLauncher.launch({ chromeFlags: ['--headless', '--no-sandbox', '--disable-gpu'] });
+        const chromePath = process.env.CHROME_PATH || process.env.GOOGLE_CHROME_BIN;
+        const chromeFlags = [
+          '--headless=new',
+          '--no-sandbox',
+          '--disable-gpu',
+          '--disable-dev-shm-usage',
+          '--no-zygote'
+        ];
+        chrome = await chromeLauncher.launch({ chromeFlags, chromePath });
         const flags = { port: chrome.port, logLevel: 'error', output: 'json' };
         const formFactor = (String(strat).toLowerCase() === 'desktop') ? 'desktop' : 'mobile';
         const screenEmulation = formFactor === 'mobile'
@@ -130,6 +171,27 @@ router.get('/batch', auth(['owner', 'employee', 'client']), async (req, res) => 
           speedIndex: audits['speed-index']?.numericValue || null,
           timeToInteractive: audits['interactive']?.numericValue || null,
           fetchedAt: lhr.fetchTime || new Date().toISOString(),
+        };
+      } catch (err) {
+        // Fallback to Google PSI if local Chrome is not available
+        const stratNorm = String(strat).toLowerCase() === 'desktop' ? 'desktop' : 'mobile';
+        const api = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed';
+        const params = { url: targetUrl, strategy: stratNorm, category: 'performance' };
+        if (process.env.PSI_API_KEY) params.key = process.env.PSI_API_KEY;
+        const { data } = await axios.get(api, { params, timeout: 20000 });
+        const lh = data.lighthouseResult || {};
+        const audits = lh.audits || {};
+        return {
+          url: lh.finalDisplayedUrl || targetUrl,
+          strategy: stratNorm,
+          performanceScore: Math.round(((lh.categories?.performance?.score || 0) * 100)),
+          firstContentfulPaint: audits['first-contentful-paint']?.numericValue || null,
+          largestContentfulPaint: audits['largest-contentful-paint']?.numericValue || null,
+          cumulativeLayoutShift: audits['cumulative-layout-shift']?.numericValue || null,
+          totalBlockingTime: audits['total-blocking-time']?.numericValue || null,
+          speedIndex: audits['speed-index']?.numericValue || null,
+          timeToInteractive: audits['interactive']?.numericValue || null,
+          fetchedAt: lh.fetchTime || new Date().toISOString(),
         };
       } finally {
         try { if (chrome) await chrome.kill(); } catch {}
