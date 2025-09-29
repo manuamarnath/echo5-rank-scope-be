@@ -21,6 +21,19 @@ const locationSchema = new Schema({
 }, { _id: false });
 
 const integrationsSchema = new Schema({
+  googleSearchConsole: {
+    type: Boolean,
+    default: false
+  },
+  googleAnalytics: {
+    type: Boolean,
+    default: false
+  },
+  googleBusinessProfile: {
+    type: Boolean,
+    default: false
+  },
+  // Legacy integration fields for actual API connections
   gsc: {
     clientId: String,
     clientSecret: String,
